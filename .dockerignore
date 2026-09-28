@@ -1,0 +1,14 @@
+# 不让 docker 上下文带这些
+backend/pb_data/
+backend/pb_migrations/
+backend/pb_public/build/
+backend/pocketbase
+backend/.git/
+frontend/node_modules/
+frontend/build/
+frontend/.svelte-kit/
+.git/
+.idea/
+.vscode/
+.DS_Store
+*.log

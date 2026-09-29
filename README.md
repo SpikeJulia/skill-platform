@@ -76,3 +76,10 @@ SKILLS_DIR="$HOME/AI/agent-skills" \
 - 节点画布推迟到 v0.2
 - 拖拽排序只存 localStorage（v0.2 加 PB SQLite 持久化）
 - Auth 关闭（localhost 默认安全；v0.2 加多用户）
+
+## License
+
+MIT，见 [LICENSE](LICENSE)。
+
+只开源这个管理平台本身，**skill 内容不进这个仓库**——平台读的是你本地的 skill 目录，
+不打包、不分发。仓库里没有 vendor 进来的第三方代码，依赖全是 MIT / ISC。

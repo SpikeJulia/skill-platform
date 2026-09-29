@@ -410,6 +410,16 @@
 		}
 	}
 
+	// 安装目标跟着当前 tab：在「已纳管」(all) 装 = 中央源；在具体 agent 装 = 它的专属库
+	function installTargetAgent(): string {
+		return activeTab;
+	}
+	function installTargetNote(): string {
+		return activeTab === 'all'
+			? '装到中央源，所有 agent 都能用'
+			: `只装到 ${activeTab} 的专属库，不影响其他 agent`;
+	}
+
 	function agentLabel(agents?: string[]): { text: string; icon: typeof Globe; class: string } {
 		if (!agents || agents.length === 0) {
 			return { text: 'unknown', icon: Globe, class: 'text-muted-foreground' };
@@ -425,24 +435,17 @@
 </script>
 
 <div class="space-y-6">
-	<div class="flex items-center justify-between">
-		<div>
-			<h1 class="text-2xl font-semibold text-foreground">所有 Skill</h1>
-			<p class="mt-1 text-sm text-muted-foreground">
-				{#if loading}加载中...{:else if error}❌ {error}{:else}{skills.length} 个 skill · 拖拽排序{/if}
-			</p>
-		</div>
-		<div class="flex gap-2">
-			<Button variant="outline" size="sm" onclick={() => refresh()} title="刷新 skills + agent tabs">
-				<RefreshCw class="mr-1 h-4 w-4" /> 刷新
-			</Button>
-			<Button variant="outline" size="sm" onclick={() => goto('/install')}>
-				<Plus class="mr-1 h-4 w-4" /> 安装新 skill
-			</Button>
-		</div>
+	<div>
+		<h1 class="text-2xl font-semibold text-foreground">所有 Skill</h1>
+		<p class="mt-1 text-sm text-muted-foreground">
+			{#if loading}加载中...{:else if error}❌ {error}{:else}{skills.length} 个 skill · 拖拽排序{/if}
+		</p>
 	</div>
 
-	<!-- Agent tab 过滤栏（v0.2.2: 增删入口移入齿轮，只显示 tab） -->
+	<!-- Agent tab 过滤栏 + 安装入口。
+	     「安装新 skill」放在这里而不是页头，因为它必须和当前 tab 绑定：
+	     在 minimax 页签点安装，就只装到 minimax 的专属库（?agent=minimax 传给安装页）。
+	     在「已纳管」页签点安装，则装到中央源、所有 agent 都有。 -->
 	<div
 		data-agent-tabbar
 		class="flex flex-wrap items-center gap-2 border-b border-border pb-2"
@@ -465,6 +468,19 @@
 				</span>
 			</button>
 		{/each}
+
+		<!-- 安装目标跟着当前 tab 走：在 minimax 页签装 = 只给 minimax -->
+		<Button
+			data-install-btn
+			variant="outline"
+			size="sm"
+			class="ml-auto"
+			onclick={() => goto(`/install?agent=${encodeURIComponent(installTargetAgent())}`)}
+			title={installTargetNote()}
+		>
+			<Plus class="mr-1 h-4 w-4" />
+			安装到{activeTab === 'all' ? '中央源' : activeTab}
+		</Button>
 	</div>
 
 	<!-- v0.2.2 增量：主页 inline 搜索框（与 tab 联动） -->
@@ -548,8 +564,8 @@
 				{searchQuery
 					? '试试别的关键词，或清空搜索看看全部'
 					: activeTab === 'all'
-						? '点击右上角"安装新 skill"开始'
-						: `在 ~/AI/agent-skills-personal/${activeTab}/<name>/ 加一个，再跑 sync.sh`}
+						? '点上方的「安装到中央源」开始'
+						: `这里还没有 ${activeTab} 专属的 skill。用上方的「安装到${activeTab}」，或在 ~/AI/agent-skills-personal/${activeTab}/<name>/ 加一个再跑 sync.sh`}
 			</p>
 			{#if !searchQuery && activeTab === 'all'}
 				<Button class="mt-4" onclick={() => goto('/install')}>

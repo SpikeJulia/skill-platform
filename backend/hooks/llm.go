@@ -60,7 +60,7 @@ var tools = []ToolDefinition{
 	},
 	{
 		Name:        "read_file",
-		Description: "读文件内容。路径必须以 /skills/ 开头",
+		Description: "读文件内容。路径必须以 /skills/ 或 /personal/ 开头",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -71,11 +71,12 @@ var tools = []ToolDefinition{
 	},
 	{
 		Name:        "write_file",
-		Description: "写文件到 /skills/<skill_name>/ 目录下。filename 不能包含路径分隔符",
+		Description: "写文件到 /skills/<skill_name>/（agent 留空）或 /personal/<agent>/<skill_name>/（指定 agent）。filename 不能包含路径分隔符",
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"skill_name": map[string]any{"type": "string", "description": "skill 名（即子目录名）"},
+				"agent":      map[string]any{"type": "string", "description": "可选。装到某个 agent 的专属库时填它的名字；装中央源留空"},
 				"filename":   map[string]any{"type": "string", "description": "文件名，如 SKILL.md"},
 				"content":    map[string]any{"type": "string"},
 			},
@@ -134,9 +135,17 @@ func executeTool(tc openai.ToolCall) string {
 		return string(data)
 	case "write_file":
 		name, _ := args["skill_name"].(string)
+		agent, _ := args["agent"].(string)
 		filename, _ := args["filename"].(string)
 		content, _ := args["content"].(string)
-		if err := WriteFile(name, filename, content); err != nil {
+		// agent 留空 → 中央源；给值 → 该 agent 的专属库
+		var err error
+		if agent == "" || agent == "all" {
+			err = WriteFile(name, filename, content)
+		} else {
+			err = WriteFileToPersonal(agent, name, filename, content)
+		}
+		if err != nil {
 			return "ERROR: " + err.Error()
 		}
 		return "OK: written " + filename

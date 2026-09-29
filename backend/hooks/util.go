@@ -300,19 +300,50 @@ func hasSafePrefix(cmd string) bool {
 	return false
 }
 
+// SafePersonalPath 把 agent + skill 名安全地拼到 personalDir 下，并验证不越界。
+// 装到某个 agent 的专属库时用这个，不能复用 SafePath（它只认中央源）。
+func SafePersonalPath(agent, name string) (string, error) {
+	// "all" 是 UI 的保留 tab 名，不是一个真实 agent
+	if agent == "" || !agentNameRe.MatchString(agent) || agent == "all" {
+		return "", fmt.Errorf("invalid agent name: %q", agent)
+	}
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") ||
+		strings.HasPrefix(name, ".") {
+		return "", fmt.Errorf("invalid skill name: %q", name)
+	}
+	base := filepath.Clean(personalDir())
+	full := filepath.Join(base, agent, name)
+	if !strings.HasPrefix(filepath.Clean(full), base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path traversal attempt: agent=%q name=%q", agent, name)
+	}
+	return full, nil
+}
+
 // WriteFile 在中央源下写文件（受 SafePath 保护）
 func WriteFile(name string, filename string, content string) error {
 	dir, err := SafePath(name)
 	if err != nil {
 		return err
 	}
+	return writeInto(dir, filename, content)
+}
+
+// WriteFileToPersonal 写到某个 agent 的专属库（受 SafePersonalPath 保护）
+func WriteFileToPersonal(agent, name, filename, content string) error {
+	dir, err := SafePersonalPath(agent, name)
+	if err != nil {
+		return err
+	}
+	return writeInto(dir, filename, content)
+}
+
+func writeInto(dir, filename, content string) error {
+	// filename 不能包含路径分隔符（只能写文件到 skill 目录顶层）
+	if filename == "" || strings.ContainsAny(filename, "/\\") {
+		return fmt.Errorf("filename must not contain path separator: %q", filename)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	fullPath := filepath.Join(dir, filename)
-	// filename 不能包含路径分隔符（只能写文件到 skill 目录顶层）
-	if strings.ContainsAny(filename, "/\\") {
-		return fmt.Errorf("filename must not contain path separator: %q", filename)
-	}
-	return os.WriteFile(fullPath, []byte(content), 0o644)
+	return os.WriteFile(filepath.Join(dir, filename), []byte(content), 0o644)
 }

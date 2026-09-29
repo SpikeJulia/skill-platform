@@ -3,9 +3,9 @@
 	import '../app.css';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { goto } from '$app/navigation';
-	import { Search, Package, Wrench, Home, Settings } from '@lucide/svelte';
+	import { Search, Package, Home, Settings, RefreshCw } from '@lucide/svelte';
 	import AgentManagerDialog from '$lib/components/AgentManagerDialog.svelte';
 	import { loadAgents } from '$lib/agents-state.svelte';
 
@@ -13,6 +13,9 @@
 
 	let searchQuery = $state('');
 	let settingsOpen = $state(false);
+
+	// 刷新只在主页有意义（主页才有 skill 列表和 tab），别的页面不放
+	const onHome = $derived(page.url.pathname === '/');
 
 	// agent 列表是共享状态（$lib/agents-state.svelte），主页 tab 栏和 Dialog 读同一份。
 	// 这里只负责首次拉取；后续增删改由 Dialog 自己调 loadAgents() 同步。
@@ -22,12 +25,6 @@
 
 	function goHome() {
 		goto('/');
-	}
-	function goInstall() {
-		goto('/install');
-	}
-	function goFind() {
-		goto('/find');
 	}
 	function onSearch(e: SubmitEvent) {
 		e.preventDefault();
@@ -65,9 +62,12 @@
 				<Button variant="ghost" size="sm" onclick={goHome}>
 					<Home class="mr-1 h-4 w-4" /> 主页
 				</Button>
-				<Button variant="ghost" size="sm" onclick={goInstall}>
-					<Wrench class="mr-1 h-4 w-4" /> 安装
-				</Button>
+				{#if onHome}
+					<!-- 刷新搬上来了：主页才有 skill 列表可刷 -->
+					<Button variant="ghost" size="sm" onclick={() => invalidateAll()} title="重新拉取 skills 与 agent tabs">
+						<RefreshCw class="mr-1 h-4 w-4" /> 刷新
+					</Button>
+				{/if}
 				<Button
 					variant="ghost"
 					size="icon"

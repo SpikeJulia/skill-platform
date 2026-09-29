@@ -96,16 +96,21 @@ export const api = {
 	listUnmanaged: () => request<{ unmanaged: Unmanaged[]; count: number }>('/unmanaged'),
 
 	// ===== Install =====
-	installContent: (name: string, content: string) =>
-		request<{ installed: string; path: string; sync: string }>('/install/content', {
+	// agent 空 = 装到中央源（所有 agent 共享）；给值 = 只装到该 agent 的专属库。
+	// 主页的「安装到 X」按钮会把当前 tab 传过来。
+	installContent: (name: string, content: string, agent?: string) =>
+		request<{ installed: string; path: string; target: string; sync: string }>('/install/content', {
 			method: 'POST',
-			body: JSON.stringify({ name, content })
+			body: JSON.stringify({ name, content, agent: agent || undefined })
 		}),
-	installURL: (url: string, name?: string) =>
-		request<{ installed: string; url: string; agent_output: string }>('/install/url', {
-			method: 'POST',
-			body: JSON.stringify({ url, name })
-		}),
+	installURL: (url: string, name?: string, agent?: string) =>
+		request<{ installed: string; url: string; target: string; agent_output: string }>(
+			'/install/url',
+			{
+				method: 'POST',
+				body: JSON.stringify({ url, name, agent: agent || undefined })
+			}
+		),
 
 	// ===== Find =====
 	find: (query: string, topK = 3) =>

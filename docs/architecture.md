@@ -151,6 +151,22 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
 - `builtin` — agent 自带的（`~/.minimax/.builtin-skills/` 那 20 个），会随版本自动更新，
   按设计不纳管，列出来只是让你知道它们存在。
 
+## 安装目标与 tab 绑定（v0.3）
+
+安装入口只在 tab 栏一处，**目标跟着当前 tab 走**：
+
+- 在「已纳管」(name=`all`) 页签点安装 → 写中央源，所有 agent 共享
+- 在 `minimax` 页签点安装 → 只写 `/personal/minimax/`，其他 agent 不受影响
+
+所以两个安装接口都接受可选的 `agent` 字段：
+
+- `POST /api/install/content` → `WriteFile`（中央源）或 `WriteFileToPersonal`（专属源）
+- `POST /api/install/url` → system prompt 里的目标目录和 `write_file` 的 `agent` 参数跟着变
+
+新增 `SafePersonalPath(agent, name)` 做越界防护：agent 名必须匹配 `[a-zA-Z0-9_-]+`
+且不能是保留的 `all`，skill 名不能含分隔符/`..`，拼完还要确认在 `personalDir()` 之下。
+不能复用 `SafePath`——它只认中央源。
+
 ## 关键修复记录
 实施过程踩过的坑：
 
@@ -183,3 +199,10 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
     恰恰这就是最该被看见的那类。改为单独扫一遍 agent 目录里已有的真目录
 14. **`[ -L "$dir/" ]` 判不出软链** → 路径带尾斜杠时 `-L` 判的是目录而非那个软链本身，
     12 个**已纳管的软链全被误报成未纳管**。扫描时不能写 `*/`，且要先判 `-L` 再判 `-d`
+15. **shadcn-svelte 的 `data-horizontal` 变体在 bits-ui v2 下永远匹配不上** → bits-ui v2
+    输出的是 `data-orientation="horizontal"`，而组件里写的是 Tailwind 的 `data-horizontal:`
+    变体（它找的是 `[data-horizontal]`）。结果是 `Tabs.Root` 上的 `flex data-horizontal:flex-col`
+    只剩 `flex`（横向），`TabsList` 和 `TabsContent` 并排渲染——安装页排版整个塌掉。
+    涉及 4 处：`tabs.svelte`、`tabs-list.svelte`、`tabs-trigger.svelte`。
+    改成 `data-[orientation=horizontal]:` / `group-data-[orientation=horizontal]/tabs:`。
+    通用判据：**bits-ui/shadcn 组件里凡是 `data-*:` 变体，先去实际 DOM 里查属性叫什么**

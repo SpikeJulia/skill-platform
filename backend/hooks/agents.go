@@ -40,8 +40,11 @@ func listAgents(c *core.RequestEvent) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	agents := make([]AgentInfo, 0, len(records)+1)
-	// 系统固定 tab "all"
-	agents = append(agents, AgentInfo{Name: "all", Label: "全部", SortOrder: 0})
+	// 系统固定 tab "all"。
+	// label 不叫「全部」：这个 tab 只列**已纳管**的 skill（中央源 + 各 agent 专属源），
+	// agent 自带的那批未纳管 skill 平台看不见，列在主页底部的「未纳管」区块里。
+	// 叫「全部」会让人以为它就是全部。
+	agents = append(agents, AgentInfo{Name: "all", Label: "已纳管", SortOrder: 0})
 	for _, r := range records {
 		agents = append(agents, AgentInfo{
 			ID:        r.Id,

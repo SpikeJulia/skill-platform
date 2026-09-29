@@ -20,8 +20,17 @@ const llmConfigID = "llmconfig000001"
 // llmConfigColName collection 名
 const llmConfigColName = "llm_config"
 
-// 内置默认提示词。用户在界面上改坏了想还原时，GET /api/config 的 default_global_prompt 返回它。
-const defaultGlobalPrompt = "" // 目前不预置任何全局规则；留空即"不改写各操作自带的提示词"
+// 内置默认提示词。这段内容会加在六个操作（组合 / 编排 / 合并 / 进化 / 语义搜索 / URL 安装）
+// 各自的提示词之前，所以只写跨操作都成立的规则，不写某个操作专属的要求。
+//
+// 存的值是空的时候回落到它——即"出厂就带默认提示词"，
+// 界面上的输入框也因此永远显示真正生效的内容，不会出现"框里有字但不生效"。
+const defaultGlobalPrompt = `你在维护一个 skill 中央库。下列规则对所有操作都适用：
+
+- 全程用简体中文。
+- 只输出结果本身，不要写"好的""我来帮你"这类开场白和结束语。
+- 不确定的地方写 TODO 注释，不要编造目录名、文件名、字段名或命令。
+- 提到文件路径用占位符（如 <你的目录>），不要写死任何人的绝对路径。`
 
 // LLMConfig 是一次 LLM 调用的完整配置
 type LLMConfig struct {
@@ -138,7 +147,11 @@ func loadLLMConfig(app core.App) (LLMConfig, error) {
 	cfg.ContextWindow = rec.GetInt("context_window")
 	cfg.MaxOutputTokens = rec.GetInt("max_output_tokens")
 	cfg.ReasoningEffort = rec.GetString("reasoning_effort")
+	// 空 = 用户没改过 = 用出厂默认。这样界面显示的、实际发出去的、存的默认值三者一致。
 	cfg.GlobalPrompt = rec.GetString("global_prompt")
+	if strings.TrimSpace(cfg.GlobalPrompt) == "" {
+		cfg.GlobalPrompt = defaultGlobalPrompt
+	}
 	if raw := strings.TrimSpace(rec.GetString("headers")); raw != "" {
 		// headers 存坏不该让模型调用挂掉，退回空表
 		_ = json.Unmarshal([]byte(raw), &cfg.Headers)

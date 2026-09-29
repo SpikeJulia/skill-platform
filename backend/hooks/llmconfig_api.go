@@ -135,6 +135,13 @@ func putConfig(c *core.RequestEvent) error {
 	if err := saveLLMConfig(c.App, cfg); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
+	// 回读一次再返回。global_prompt 存空时会回落到出厂默认值，
+	// 不回读的话 PUT 的响应里会是空串，界面上的输入框保存后反而变空。
+	saved, err := loadLLMConfig(c.App)
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	cfg = saved
 
 	// 存完就试一次真实调用。配置看着对但 key 错/地址错是最常见的坑，
 	// 让用户在保存这一步就知道，而不是等到跑组合才发现。
@@ -142,7 +149,11 @@ func putConfig(c *core.RequestEvent) error {
 	if cfg.APIKey == "" && fallbackAPIKey() == "" {
 		testResult = "未配置 API Key，本次未做连通性测试"
 	} else {
-		if _, err := AgentRun(c.Request.Context(), "回复 OK 两个字即可。", "健康检查", 1); err != nil {
+		// 明确禁止调工具，且多给几轮余量——用户自定义的全局提示词可能把模型
+		// 带偏到去调工具，只给 1 轮会误报成"调用失败"。
+		if _, err := AgentRun(c.Request.Context(),
+			"你是连通性检查用的探针，只回一个字，不要调用任何工具。",
+			"回复 OK 两个字即可。不要调用任何工具。", 4); err != nil {
 			testResult = "已保存，但连通性测试失败: " + err.Error()
 		} else {
 			testResult = "已保存，模型调用正常"

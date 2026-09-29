@@ -34,7 +34,7 @@
        ↑ 浏览器 (Safari/Chrome) — 127.0.0.1:8090
 
 宿主侧（容器外）:
-  launchd com.tangxuan.agent-skills-sync
+  launchd com.<you>.agent-skills-sync
     WatchPaths 监听 <中央源> / <专属源> 的增删 + 5 分钟兜底
       → ~/AI/agent-skills/auto-sync.sh (单实例锁 + 5s 去抖)
         → sync.sh 把 skill 软链到各 agent 的 ~/.<agent>/skills/

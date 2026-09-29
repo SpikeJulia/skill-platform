@@ -14,9 +14,6 @@
 
 </div>
 
-> [!NOTE]
-> **只开源这个管理平台，skill 内容不进这个仓库。** 平台读的是你本机的 skill 目录，不打包、不分发。
-
 自己搭着搭着就顺手抽出来的一个东西。起因很简单：skill 越攒越多，但「有哪些、谁在用、装没装上」全靠翻文件夹，
 每次都得靠记忆。
 
@@ -175,7 +172,7 @@ agent 列表在平台上增删，写进 PocketBase。
 - **数据**：`~/AI/skill-platform-data/`（PB SQLite）
 - **前端**：SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte
 - **模型**：MiniMax-M3 直调
-- **投递**：宿主 launchd（`com.tangxuan.agent-skills-sync`）建软链
+- **投递**：宿主 launchd（如 `com.<你>.agent-skills-sync`）建软链
 
 架构细节和 12 条修复记录在 [docs/architecture.md](./docs/architecture.md)，运维在 [docs/operations.md](./docs/operations.md)。
 
@@ -190,7 +187,6 @@ Claude Code / Codex / OpenCode 都能接。
 - 排序只存 localStorage，没进 PB
 - Auth 关闭（localhost 默认安全）
 - 不接 pi，节点画布也没做
-- 拖拽排序**没在触摸设备上试过**
 
 ---
 
@@ -198,7 +194,7 @@ Claude Code / Codex / OpenCode 都能接。
 
 我是 Mr.Tang，一个为人民服务的普通人，喜欢鼓捣 AI 相关的小玩意儿。
 
-这个平台是自己用着顺手才抽出来的，不是给别人设计的产品。用着有问题，欢迎在 Issues 里说一声。
+这个平台是自己用着顺手才抽出来的。用着有问题，欢迎在 Issues 里说一声。
 
 Skill 本体在另一个仓库：[SpikeJulia/MrTang-Skills](https://github.com/SpikeJulia/MrTang-Skills)。
 

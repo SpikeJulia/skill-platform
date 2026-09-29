@@ -94,7 +94,7 @@ curl -X POST https://api.minimax.cn/v1/chat/completions \
 
 ### agent 软链没更新
 
-正常情况下宿主 launchd（`com.tangxuan.agent-skills-sync`）会在几秒内自动同步——
+正常情况下宿主 launchd（`com.<you>.agent-skills-sync`）会在几秒内自动同步——
 它 WatchPaths 监听两个源目录的增删，另有 5 分钟兜底。怀疑没触发或急用时手动跑：
 
 ```bash

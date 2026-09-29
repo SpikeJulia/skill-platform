@@ -92,16 +92,20 @@ curl -X POST https://api.minimax.cn/v1/chat/completions \
   -d '{"model":"MiniMax-M3","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-### 5 个 agent 软链没更新
+### agent 软链没更新
+
+正常情况下宿主 launchd（`com.tangxuan.agent-skills-sync`）会在几秒内自动同步——
+它 WatchPaths 监听两个源目录的增删，另有 5 分钟兜底。怀疑没触发或急用时手动跑：
 
 ```bash
-# 手动跑 sync
 bash ~/AI/agent-skills/sync.sh
 ```
+
+注意：**agent 名单取自平台里的 agent tabs**。平台里少一个 agent，它的 skills 目录就同步不到。
 
 ## 安全
 
 - 仅本机监听（`127.0.0.1:8090`）
-- 中央源只读挂载（容器里不能改中央源；要装新 skill 通过 API）
+- 中央源与专属源按**可写**挂载（平台的安装功能需要真正落盘）；但 skill 软链只在宿主建立
 - bash 工具白名单（git/ls/find/grep/cp/mv/mkdir/echo/bash）—— agent 误操作影响有限
-- API key 通过环境变量注入容器（不写入镜像）
+- API key 通过文件挂载注入容器（不写入镜像）

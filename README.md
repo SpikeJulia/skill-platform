@@ -5,7 +5,9 @@
 ## 是什么
 
 - 单一 docker 容器：PocketBase 0.25+ (Go 单二进制) + SvelteKit 静态前端（嵌入 Go 二进制）
-- 中央源：`~/AI/agent-skills/`（已通过 `sync.sh` 软链到 5 个 agent）
+- 中央源：`~/AI/agent-skills/`；专属源：`~/AI/agent-skills-personal/<agent>/`
+- 投递：宿主 launchd 监听两个源目录的增删，自动跑 `sync.sh` 把软链建到各 agent 的
+  `~/.<agent>/skills/`（容器看不到宿主 home，**软链只能在宿主建**）。agent 名单在平台里管理
 - 数据：`~/AI/skill-platform-data/`（PB SQLite）
 - API：MiniMax-M3 直调（v0.1 不装 pi）
 
@@ -63,7 +65,7 @@ go build -o /tmp/skill-platform .
 
 # 启动
 MINIMAX_API_KEY=$(grep '^MINIMAX_API_KEY=' ~/AI/asr/config.env | cut -d= -f2- | tr -d '"\n ') \
-SKILLS_DIR=/Users/tangxuan/AI/agent-skills \
+SKILLS_DIR="$HOME/AI/agent-skills" \
   /tmp/skill-platform serve --http=127.0.0.1:8090
 ```
 

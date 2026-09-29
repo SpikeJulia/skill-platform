@@ -44,9 +44,8 @@ docker compose restart
 ### 备份什么
 
 ```
-~/AI/skill-platform-data/        ← PB SQLite + 上传文件
+~/AI/skill-platform-data/        ← PB SQLite（含 llm_config 里的 API key）+ 上传文件
 ~/AI/agent-skills/               ← 中央源（实际就是 skill 本身，建议另外 backup 到 NAS）
-~/AI/asr/config.env              ← 已有 MINIMAX_API_KEY
 ```
 
 ## 升级
@@ -59,13 +58,15 @@ git pull
 docker compose up -d --build
 ```
 
-### 升级 MiniMax API 模型
+### 升级模型
 
-如果以后用更新的模型，编辑 `backend/hooks/register.go`：
-```go
-const LLMModel = "MiniMax-M3"  // 改这里
+不用改代码。打开顶栏的「Agent 配置」，改「模型名称」（和提供商、接口地址、API 格式、
+API Key）→ 保存并测试。配置存在 PB 的 `llm_config` 表里。
+
+想确认当前配的是什么：
+```bash
+curl -s http://127.0.0.1:8090/api/config
 ```
-然后 `docker compose up -d --build`。
 
 ## 故障排查
 
@@ -78,19 +79,27 @@ docker compose logs skill-platform
 
 常见：
 - `/api/health conflicts` → 检查 hooks/register.go 不要注册内置端点
-- `MINIMAX_API_KEY not set` → 检查 ~/AI/asr/config.env 是否挂载
+- `尚未配置 API Key` → 到顶栏「Agent 配置」里填 key（key 存在 PB 里，不走环境变量）
 
 ### LLM 调用超时
 
-MiniMax-M3 是推理模型，慢（30s-2min 都有可能）。前端 "调 LLM 中..." 转圈耐心等。
+推理模型慢（30s-2min 都有可能）。前端 "调 LLM 中..." 转圈耐心等。
 
-如果持续超时：直接 `curl` 测 API：
+如果持续超时：先看「Agent 配置」里配的是什么，然后用同样的协议和地址直连测。
+下面以默认的 Anthropic Messages 协议为例（key 从 PB 里读，不落命令行历史）：
+
 ```bash
-curl -X POST https://api.minimax.cn/v1/chat/completions \
-  -H "Authorization: Bearer $MINIMAX_API_KEY" \
+KEY=$(curl -s http://127.0.0.1:8090/api/config | grep -o '"has_api_key":[a-z]*' || true)
+echo "$KEY"   # 只看有没有配；真要直连请自己从「Agent 配置」复制 key
+
+curl -X POST https://api.minimaxi.com/anthropic/v1/messages \
+  -H "x-api-key: <你的 key>" \
+  -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
-  -d '{"model":"MiniMax-M3","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"model":"MiniMax-M3","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}'
 ```
+
+> 注意国内端点是 `api.minimaxi.com`。国际站的 `api.minimax.io` 在国内会返 401。
 
 ### agent 软链没更新
 

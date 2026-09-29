@@ -34,17 +34,11 @@
 	let showKey = $state(false);
 	let testMsg = $state('');
 	let testOk = $state(false);
+	// 存是存成功了，只是没 key 没法测——这是提醒不是错误
+	let testWarn = $state(false);
 
 	// header 动态行：[{key, value}]
 	let headerRows = $state<{ key: string; value: string }[]>([]);
-
-	const currentFormat = $derived(formats.find((f) => f.id === cfg?.api_format));
-	// 选了协议就提示它的实际端点拼法，省得用户自己猜要不要带 /v1
-	const endpointPreview = $derived(
-		currentFormat
-			? `${cfg?.base_url || '<接口地址>'}${currentFormat.endpoint.replace('{base}', '')}`
-			: ''
-	);
 
 	onMount(async () => {
 		if (formats.length === 0) {
@@ -113,10 +107,12 @@
 				value
 			}));
 			testMsg = res.test;
-			testOk = !res.test.includes('失败') && !res.test.includes('未配置');
+			testWarn = res.test.includes('未做连通性测试');
+			testOk = !res.test.includes('失败') && !testWarn;
 		} catch (e) {
 			testMsg = '保存失败: ' + (e as Error).message;
 			testOk = false;
+			testWarn = false;
 		} finally {
 			saving = false;
 		}
@@ -135,9 +131,11 @@
 			apiKeyInput = '';
 			testMsg = '已还原出厂配置';
 			testOk = true;
+			testWarn = false;
 		} catch (e) {
 			testMsg = '还原失败: ' + (e as Error).message;
 			testOk = false;
+			testWarn = false;
 		} finally {
 			saving = false;
 		}
@@ -147,17 +145,6 @@
 		if (!cfg) return;
 		cfg.global_prompt = cfg.default_global_prompt;
 	}
-
-	// key 状态只留一行短提示，用小圆点区分，不再铺一段灰字
-	const keyState = $derived(
-		!cfg
-			? null
-			: cfg.has_api_key
-				? { dot: 'bg-emerald-500', text: `已配置 ${cfg.api_key_masked}` }
-				: cfg.key_from_env
-					? { dot: 'bg-amber-500', text: '未填写，暂用环境变量里的 key' }
-					: { dot: 'bg-destructive', text: '未配置' }
-	);
 
 	function pickFormat(id: string) {
 		if (!cfg) return;
@@ -172,7 +159,9 @@
 </script>
 
 <Dialog bind:open>
-	<DialogContent class="max-h-[88vh] max-w-2xl overflow-y-auto" data-config-dialog>
+	<!-- 注意：DialogContent 自带 sm:max-w-sm（384px），必须用同样的 sm: 变体去顶掉它，
+	     光写 max-w-3xl 会被它盖掉（之前就一直卡在 384px，API 格式下拉被挤到显示不全）。 -->
+	<DialogContent class="max-h-[88vh] overflow-y-auto sm:max-w-3xl" data-config-dialog>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
 				<Plug class="h-5 w-5" /> Agent 配置
@@ -226,40 +215,27 @@
 							bind:value={cfg.base_url}
 							placeholder="https://api.minimaxi.com/anthropic"
 						/>
-						{#if currentFormat}
-							<p class="text-xs text-muted-foreground">
-								实际请求 <code class="rounded bg-muted px-1">{endpointPreview}</code>
-							</p>
-						{/if}
 					</div>
 
 					<div class="space-y-1.5">
 						<label class="text-sm font-medium" for="cfg-key">API Key</label>
-						<div class="flex items-center gap-3">
-							<div class="relative flex-1">
-								<Input
-									id="cfg-key"
-									data-config-field="api_key"
-									type={showKey ? 'text' : 'password'}
-									bind:value={apiKeyInput}
-									placeholder={cfg.has_api_key ? '留空表示不修改' : '粘贴 API Key'}
-									class="pr-10"
-								/>
-								<button
-									type="button"
-									onclick={() => (showKey = !showKey)}
-									class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-									title={showKey ? '隐藏' : '显示'}
-								>
-									{#if showKey}<EyeOff class="h-4 w-4" />{:else}<Eye class="h-4 w-4" />{/if}
-								</button>
-							</div>
-							{#if keyState}
-								<span class="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-									<span class="h-1.5 w-1.5 rounded-full {keyState.dot}"></span>
-									{keyState.text}
-								</span>
-							{/if}
+						<div class="relative">
+							<Input
+								id="cfg-key"
+								data-config-field="api_key"
+								type={showKey ? 'text' : 'password'}
+								bind:value={apiKeyInput}
+								placeholder={cfg.has_api_key ? `已配置 ${cfg.api_key_masked}，留空不改` : '粘贴 API Key'}
+								class="pr-10"
+							/>
+							<button
+								type="button"
+								onclick={() => (showKey = !showKey)}
+								class="absolute top-1/2 right-2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+								title={showKey ? '隐藏' : '显示'}
+							>
+								{#if showKey}<EyeOff class="h-4 w-4" />{:else}<Eye class="h-4 w-4" />{/if}
+							</button>
 						</div>
 					</div>
 
@@ -299,17 +275,12 @@
 						</div>
 						<div class="space-y-1.5">
 							<label class="text-sm font-medium" for="cfg-effort">推理等级</label>
-							<select
+							<Input
 								id="cfg-effort"
 								data-config-field="reasoning_effort"
-								class="h-9 w-full rounded-md border border-input bg-card px-3 text-sm"
 								bind:value={cfg.reasoning_effort}
-							>
-								<option value="">（不指定）</option>
-								<option value="low">low</option>
-								<option value="medium">medium</option>
-								<option value="high">high</option>
-							</select>
+								placeholder="low / medium / high"
+							/>
 						</div>
 						<div class="space-y-1.5">
 							<label class="text-sm font-medium" for="cfg-ctx">上下文窗口</label>
@@ -360,7 +331,9 @@
 						data-config-test
 						class="flex items-start gap-2 rounded-md px-3 py-2 text-sm {testOk
 							? 'border border-green-200 bg-green-50 text-green-800'
-							: 'border border-destructive/30 bg-destructive/10 text-destructive'}"
+							: testWarn
+								? 'border border-amber-200 bg-amber-50 text-amber-800'
+								: 'border border-destructive/30 bg-destructive/10 text-destructive'}"
 					>
 						{#if testOk}
 							<Check class="mt-0.5 h-4 w-4 shrink-0" />

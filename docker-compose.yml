@@ -15,10 +15,6 @@ services:
       - ~/AI/agent-skills:/skills
       # 专属源（同样需要可写）
       - ~/AI/agent-skills-personal:/personal
-      # API key 配置
-      - ~/AI/asr/config.env:/config.env:ro
-    environment:
-      - MINIMAX_API_KEY_FILE=/config.env
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/api/health"]
       interval: 30s

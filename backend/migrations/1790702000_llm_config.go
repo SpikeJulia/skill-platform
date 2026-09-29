@@ -11,18 +11,18 @@ import (
 // 之前模型配置是写死在 Go 常量里的（LLMBaseURL / LLMModel），API key 从环境变量读，
 // 换供应商要改代码重编译。现在开放到界面上。
 //
-// 固定只存 **一条** 记录（id 固定为 "llmconfig"）——用户选了单模型方案。
+// 固定只存 **一条** 记录（id 固定为 "llmconfig000001"）——用户选了单模型方案。
 //
 // 字段：
 //   - provider          提供商显示名（DeepSeek / MiniMax / …，纯展示）
-//   - api_format        调用协议：openai_chat | openai_responses | anthropic
+//   - api_format        调用协议：anthropic | openai_responses
 //   - base_url          接口地址
 //   - api_key           API key。⚠️ GET 接口绝不回显明文，只回 has_api_key + 掩码
 //   - headers           自定义 header，JSON 对象字符串
 //   - model             模型名称
 //   - context_window    上下文窗口（仅展示/记录，调用时不截断）
 //   - max_output_tokens 最大输出 token；>0 时作为上限传给供应商
-//   - reasoning_effort  推理等级：low | medium | high（仅部分供应商支持）
+//   - reasoning_effort  推理等级，自由文本（常见 low/medium/high，各供应商取值不同）
 //   - global_prompt     全局提示词，追加到所有 LLM 操作之前。空 = 用内置默认
 func init() {
 	m.Register(func(app core.App) error {
@@ -59,7 +59,7 @@ func init() {
 		// 同一个 key 直接可用，不用改任何东西。
 		rec := core.NewRecord(col)
 		// 固定 id（与 hooks.llmConfigID 对应；migrations 包不能 import hooks）。
-		// ⚠️ PocketBase 要求 record id 至少 15 个字符，短 id 会在 migration 阶段直接失败。
+		// ⚠️ PocketBase 要求 record id **正好** 15 个字符，短了或长了都在 migration 阶段直接失败。
 		rec.Id = "llmconfig000001"
 		rec.Set("provider", "MiniMax")
 		rec.Set("api_format", "anthropic")

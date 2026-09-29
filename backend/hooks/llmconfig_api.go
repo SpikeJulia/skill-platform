@@ -28,8 +28,6 @@ type llmConfigView struct {
 	DefaultGlobalPrompt string `json:"default_global_prompt"`
 	// SupportedFormats 供界面渲染 API 格式下拉
 	SupportedFormats []string `json:"supported_formats"`
-	// KeyFromEnv 表示当前生效的 key 来自环境变量而不是配置（界面提示用）
-	KeyFromEnv bool `json:"key_from_env"`
 }
 
 func toView(cfg LLMConfig) llmConfigView {
@@ -47,7 +45,6 @@ func toView(cfg LLMConfig) llmConfigView {
 		GlobalPrompt:        cfg.GlobalPrompt,
 		DefaultGlobalPrompt: defaultGlobalPrompt,
 		SupportedFormats:    []string{FormatAnthropic, FormatResponses},
-		KeyFromEnv:          cfg.APIKey == "" && fallbackAPIKey() != "",
 	}
 }
 
@@ -146,8 +143,8 @@ func putConfig(c *core.RequestEvent) error {
 	// 存完就试一次真实调用。配置看着对但 key 错/地址错是最常见的坑，
 	// 让用户在保存这一步就知道，而不是等到跑组合才发现。
 	testResult := ""
-	if cfg.APIKey == "" && fallbackAPIKey() == "" {
-		testResult = "未配置 API Key，本次未做连通性测试"
+	if cfg.APIKey == "" {
+		testResult = "已保存，但还没填 API Key，本次未做连通性测试"
 	} else {
 		// 明确禁止调工具，且多给几轮余量——用户自定义的全局提示词可能把模型
 		// 带偏到去调工具，只给 1 轮会误报成"调用失败"。

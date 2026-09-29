@@ -58,7 +58,6 @@ export interface LLMConfigView {
 	global_prompt: string;
 	default_global_prompt: string;
 	supported_formats: ApiFormat[];
-	key_from_env: boolean;
 }
 
 // PUT 请求体。api_key 空 = 不改；传 '__clear__' = 清除

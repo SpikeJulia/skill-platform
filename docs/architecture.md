@@ -29,7 +29,6 @@
 │  -v <数据目录>:/app/pb_data              (PB SQLite)     │
 │  -v <中央源>:/skills                     (可写)           │
 │  -v <专属源>:/personal                   (可写)           │
-│  -v <api-key 文件>:/config.env:ro        (API key)       │
 └──────────────────────────────────────────────────────────┘
        ↑ 浏览器 (Safari/Chrome) — 127.0.0.1:8090
 
@@ -44,7 +43,9 @@
 
 1. **单二进制部署**：`go:embed all:` 把 SvelteKit 构建产物嵌入 Go 二进制，最终 `pocketbase` 一个文件搞定
 2. **容器只管内容，软链由宿主建**：容器内 `/skills`、`/personal` 挂为可写，平台的「安装新 skill」直接落盘到真实目录；但 skill 软链（`~/.<agent>/skills/`）**只能在宿主建立**——容器里 `$HOME=/root`，宿主的 home 不可见。因此同步交给宿主 launchd 监听目录变化后跑 `sync.sh`
-3. **API key 不入镜像**：通过文件挂载 `-v <key file>:/config.env:ro` 注入
+3. **API key 存在 PB 里**：在「Agent 配置」对话框里填，明文只落 `llm_config` 表，
+   任何接口都不回显（响应里只有 `has_api_key` + 打码后的 `api_key_masked`）。
+   不走环境变量、不挂密钥文件——一个地方配置，升级和迁移都不会漏
 4. **PB 既是 web 框架又是数据库**：SQLite 内嵌，零外部依赖
 
 ## 后端路由
@@ -212,3 +213,9 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
 17. **国内 MiniMax 的 Anthropic 端点是 `api.minimaxi.com`，不是 `api.minimax.io`** → 同一个 key 直连
     测出来 `.io` 返回 401 invalid api key，`.com` 返回 200。默认端点与前端下拉默认值都用后者。
     换 provider 时这类域名要实测，不要照抄文档里的国际站
+18. **给 shadcn 组件加宽度，写 `max-w-*` 是不生效的** → `DialogContent` 自带 `sm:max-w-sm`（384px），
+    而 Tailwind 里变体类（`sm:`）排在基础类之后生成，我写的 `max-w-3xl`（基础类）
+    被它整个盖掉。配置对话框一直卡在 384px，API 格式下拉被挤到文字压着箭头。
+    修法：**用同一个变体去顶**（`sm:max-w-3xl`）。`cn()` 走 tailwind-merge，
+    调用方的 class 排在基础串后面，同组冲突它会自动把基础类剔掉。
+    通用判据：**改 shadcn 组件的尺寸/颜色/间距，先看它自己带的是哪个变体，再用同名变体覆盖**

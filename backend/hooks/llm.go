@@ -155,11 +155,7 @@ func AgentRun(ctx context.Context, systemPrompt string, userPrompt string, maxTu
 		return "", fmt.Errorf("模型配置无效: %w", err)
 	}
 	if cfg.APIKey == "" {
-		// 没配 key：兜底读环境变量 / config.env，兼容迁移前的老部署
-		cfg.APIKey = fallbackAPIKey()
-	}
-	if cfg.APIKey == "" {
-		return "", fmt.Errorf("尚未配置 API Key：到「设置」里填，或设环境变量 MINIMAX_API_KEY")
+		return "", fmt.Errorf("尚未配置 API Key：到顶栏的「Agent 配置」里填")
 	}
 	prov, err := resolveProvider(cfg.APIFormat)
 	if err != nil {
@@ -169,24 +165,6 @@ func AgentRun(ctx context.Context, systemPrompt string, userPrompt string, maxTu
 		maxTurns = 10
 	}
 	return prov.run(ctx, cfg, applyGlobalPrompt(cfg.GlobalPrompt, systemPrompt), userPrompt, maxTurns)
-}
-
-// fallbackAPIKey 迁移前的部署靠环境变量 / /config.env 提供 key。
-// 新配置没填时才走这里，保证升级不炸。
-func fallbackAPIKey() string {
-	if k := os.Getenv("MINIMAX_API_KEY"); k != "" {
-		return strings.TrimSpace(k)
-	}
-	data, err := os.ReadFile("/config.env")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "MINIMAX_API_KEY=") {
-			return strings.Trim(strings.TrimPrefix(line, "MINIMAX_API_KEY="), "\"'")
-		}
-	}
-	return ""
 }
 
 // pbApp 返回全局 PocketBase app（main.go 里注入）

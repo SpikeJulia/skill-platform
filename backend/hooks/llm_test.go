@@ -293,12 +293,23 @@ func TestConfigValidate(t *testing.T) {
 		{"接口地址无 scheme", LLMConfig{APIFormat: FormatAnthropic, BaseURL: "x.dev", Model: "m"}},
 		{"空模型名", LLMConfig{APIFormat: FormatAnthropic, BaseURL: "https://x.dev"}},
 		{"不支持的协议", LLMConfig{APIFormat: "openai_chat", BaseURL: "https://x.dev", Model: "m"}},
-		{"非法推理等级", LLMConfig{APIFormat: FormatAnthropic, BaseURL: "https://x.dev", Model: "m", ReasoningEffort: "ultra"}},
+		{"推理等级含空格", LLMConfig{APIFormat: FormatAnthropic, BaseURL: "https://x.dev", Model: "m", ReasoningEffort: "very high"}},
+		{"推理等级过长", LLMConfig{APIFormat: FormatAnthropic, BaseURL: "https://x.dev", Model: "m", ReasoningEffort: strings.Repeat("a", 33)}},
 	}
 	for _, b := range bad {
 		cfg := b.cfg
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("%s: 期望报错", b.name)
+		}
+	}
+}
+
+// 推理等级是自由输入：不同供应商取值不一样，不能只认 low/medium/high。
+func TestValidateAcceptsNonStandardReasoningEffort(t *testing.T) {
+	for _, v := range []string{"low", "medium", "high", "minimal", "xhigh", "HIGH", "reasoning_effort-2"} {
+		cfg := LLMConfig{APIFormat: FormatAnthropic, BaseURL: "https://x.dev", Model: "m", ReasoningEffort: v}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("推理等级 %q 应被接受，实际报错: %v", v, err)
 		}
 	}
 }

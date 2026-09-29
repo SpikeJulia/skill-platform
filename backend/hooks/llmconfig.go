@@ -3,6 +3,7 @@ package hooks
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/pocketbase/pocketbase/core"
@@ -19,6 +20,9 @@ const llmConfigID = "llmconfig000001"
 
 // llmConfigColName collection 名
 const llmConfigColName = "llm_config"
+
+// reasoningEffortPattern 只保证形状安全（单词、无空格、无控制字符），不限定具体取值。
+var reasoningEffortPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 // 内置默认提示词。这段内容会加在六个操作（组合 / 编排 / 合并 / 进化 / 语义搜索 / URL 安装）
 // 各自的提示词之前，所以只写跨操作都成立的规则，不写某个操作专属的要求。
@@ -103,12 +107,10 @@ func (c *LLMConfig) Validate() error {
 	if c.MaxOutputTokens < 0 {
 		return fmt.Errorf("最大输出 Token 不能为负")
 	}
-	if c.ReasoningEffort != "" {
-		switch c.ReasoningEffort {
-		case "low", "medium", "high":
-		default:
-			return fmt.Errorf("推理等级只能是 low / medium / high，收到 %q", c.ReasoningEffort)
-		}
+	// 推理等级：不同供应商取值不一样（OpenAI 是 low/medium/high，别的可能是 minimal、xhigh…），
+	// 所以界面上是自由输入框，这里只挡会破坏请求的形状（空格、换行、控制字符），不限定取值。
+	if c.ReasoningEffort != "" && !reasoningEffortPattern.MatchString(c.ReasoningEffort) {
+		return fmt.Errorf("推理等级只能是一个不含空格的短词（常见取值 low / medium / high），收到 %q", c.ReasoningEffort)
 	}
 	if c.Headers == nil {
 		c.Headers = map[string]string{}

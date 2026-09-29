@@ -39,6 +39,50 @@ export interface AgentResponse {
 	target_path?: string;
 }
 
+// v0.4: agent 的模型与提示词配置
+export type ApiFormat = 'anthropic' | 'openai_responses';
+
+// ⚠️ 这里没有 api_key 字段——后端从设计上就不回显明文。
+// 只有 has_api_key（有没有配）和 api_key_masked（打码）两个字段。
+export interface LLMConfigView {
+	provider: string;
+	api_format: ApiFormat;
+	base_url: string;
+	has_api_key: boolean;
+	api_key_masked: string;
+	headers: Record<string, string>;
+	model: string;
+	context_window: number;
+	max_output_tokens: number;
+	reasoning_effort: string;
+	global_prompt: string;
+	default_global_prompt: string;
+	supported_formats: ApiFormat[];
+	key_from_env: boolean;
+}
+
+// PUT 请求体。api_key 空 = 不改；传 '__clear__' = 清除
+export interface LLMConfigInput {
+	provider?: string;
+	api_format?: ApiFormat;
+	base_url?: string;
+	api_key?: string;
+	headers?: Record<string, string>;
+	model?: string;
+	context_window?: number;
+	max_output_tokens?: number;
+	reasoning_effort?: string;
+	global_prompt?: string;
+}
+
+export interface APIFormatInfo {
+	id: ApiFormat;
+	label: string;
+	endpoint: string;
+	note: string;
+	auth_default: string;
+}
+
 // 平台管不到、但确实存在的 skill（由宿主 sync.sh 扫描生成清单）
 // kind: "local" = ~/.<agent>/skills/ 里的真目录，可纳管
 //       "builtin" = agent 自带的，会自动更新，不该纳管
@@ -156,5 +200,15 @@ export const api = {
 	deleteAgent: (name: string) =>
 		request<{ deleted: string; note: string }>(`/agents/${encodeURIComponent(name)}`, {
 			method: 'DELETE'
-		})
+		}),
+
+	// ===== Agent 配置 (v0.4) =====
+	getConfig: () => request<LLMConfigView>('/config'),
+	putConfig: (body: LLMConfigInput) =>
+		request<{ config: LLMConfigView; test: string; saved_at: string }>('/config', {
+			method: 'PUT',
+			body: JSON.stringify(body)
+		}),
+	resetConfig: () => request<{ config: LLMConfigView }>('/config/reset', { method: 'POST' }),
+	listAPIFormats: () => request<{ formats: APIFormatInfo[] }>('/config/formats')
 };

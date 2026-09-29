@@ -7,35 +7,26 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/pocketbase/pocketbase/core"
 )
 
-// llmClient 全局 MiniMax-M3 client（懒加载，从环境变量取 API key）
-var llmClient *openai.Client
+// provider 是一个 LLM 协议的适配器。三种协议的消息格式、工具调用格式都不同，
+// 所以各自实现完整的 agent loop（结构一样，线格式不同）。
+type provider interface {
+	// run 跑一次完整的多轮工具调用循环，直到模型不再要工具或达到 maxTurns。
+	run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int) (string, error)
+}
 
-func getClient() *openai.Client {
-	if llmClient != nil {
-		return llmClient
+// resolveProvider 按 api_format 返回对应适配器
+func resolveProvider(format string) (provider, error) {
+	switch format {
+	case FormatAnthropic:
+		return anthropicProvider{}, nil
+	case FormatResponses:
+		return responsesProvider{}, nil
+	default:
+		return nil, fmt.Errorf("不支持的 api_format: %q（可选 %s / %s）", format, FormatAnthropic, FormatResponses)
 	}
-	apiKey := os.Getenv("MINIMAX_API_KEY")
-	if apiKey == "" {
-		// 兜底：从 config.env 读
-		if data, err := os.ReadFile("/config.env"); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				if strings.HasPrefix(line, "MINIMAX_API_KEY=") {
-					apiKey = strings.TrimPrefix(line, "MINIMAX_API_KEY=")
-					break
-				}
-			}
-		}
-	}
-	if apiKey == "" {
-		return nil
-	}
-	cfg := openai.DefaultConfig(apiKey)
-	cfg.BaseURL = LLMBaseURL
-	llmClient = openai.NewClientWithConfig(cfg)
-	return llmClient
 }
 
 // ToolDefinition 定义一个 LLM 可调用的工具
@@ -96,62 +87,46 @@ var tools = []ToolDefinition{
 	},
 }
 
-func toolsToOpenAI() []openai.Tool {
-	out := make([]openai.Tool, len(tools))
-	for i, t := range tools {
-		paramsJSON, _ := json.Marshal(t.Parameters)
-		out[i] = openai.Tool{
-			Type: openai.ToolTypeFunction,
-			Function: &openai.FunctionDefinition{
-				Name:        t.Name,
-				Description: t.Description,
-				Parameters:  json.RawMessage(paramsJSON),
-			},
-		}
-	}
-	return out
-}
-
-// executeTool 跑一个 tool call
-func executeTool(tc openai.ToolCall) string {
+// executeTool 执行一次工具调用并返回结果文本。
+// 三种协议的 tool call 结构不同，统一在这里解析成 {name, arguments(JSON字符串)} 后调用，
+// 工具本身和协议解耦。
+func executeTool(name string, argumentsJSON string) string {
 	var args map[string]any
-	if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+	if err := json.Unmarshal([]byte(argumentsJSON), &args); err != nil {
 		return fmt.Sprintf("ERROR: invalid tool args: %v", err)
 	}
-	switch tc.Function.Name {
+	str := func(k string) string {
+		s, _ := args[k].(string)
+		return s
+	}
+	switch name {
 	case "bash":
-		cmd, _ := args["cmd"].(string)
-		out, err := SafeBash(cmd)
+		out, err := SafeBash(str("cmd"))
 		if err != nil {
 			return "ERROR: " + err.Error() + "\n" + out
 		}
 		return out
 	case "read_file":
-		path, _ := args["path"].(string)
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(str("path"))
 		if err != nil {
 			return "ERROR: " + err.Error()
 		}
 		return string(data)
 	case "write_file":
-		name, _ := args["skill_name"].(string)
-		agent, _ := args["agent"].(string)
-		filename, _ := args["filename"].(string)
-		content, _ := args["content"].(string)
+		agent := str("agent")
 		// agent 留空 → 中央源；给值 → 该 agent 的专属库
 		var err error
 		if agent == "" || agent == "all" {
-			err = WriteFile(name, filename, content)
+			err = WriteFile(str("skill_name"), str("filename"), str("content"))
 		} else {
-			err = WriteFileToPersonal(agent, name, filename, content)
+			err = WriteFileToPersonal(agent, str("skill_name"), str("filename"), str("content"))
 		}
 		if err != nil {
 			return "ERROR: " + err.Error()
 		}
-		return "OK: written " + filename
+		return "OK: written " + str("filename")
 	case "list_dir":
-		path, _ := args["path"].(string)
-		entries, err := os.ReadDir(path)
+		entries, err := os.ReadDir(str("path"))
 		if err != nil {
 			return "ERROR: " + err.Error()
 		}
@@ -161,59 +136,62 @@ func executeTool(tc openai.ToolCall) string {
 		}
 		return out.String()
 	default:
-		return "ERROR: unknown tool: " + tc.Function.Name
+		return "ERROR: unknown tool: " + name
 	}
 }
 
-// AgentRun 跑一次完整的 agent loop（最多 maxTurns 轮）
+// AgentRun 跑一次完整的 agent loop（最多 maxTurns 轮）。
+// 现在按配置里的 api_format 分发到对应协议的适配器，并把全局提示词拼到操作提示词之前。
 func AgentRun(ctx context.Context, systemPrompt string, userPrompt string, maxTurns int) (string, error) {
-	client := getClient()
-	if client == nil {
-		return "", fmt.Errorf("MINIMAX_API_KEY not set")
+	app := pbApp()
+	if app == nil {
+		return "", fmt.Errorf("PocketBase app 未初始化")
+	}
+	cfg, err := loadLLMConfig(app)
+	if err != nil {
+		return "", fmt.Errorf("读取模型配置失败: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return "", fmt.Errorf("模型配置无效: %w", err)
+	}
+	if cfg.APIKey == "" {
+		// 没配 key：兜底读环境变量 / config.env，兼容迁移前的老部署
+		cfg.APIKey = fallbackAPIKey()
+	}
+	if cfg.APIKey == "" {
+		return "", fmt.Errorf("尚未配置 API Key：到「设置」里填，或设环境变量 MINIMAX_API_KEY")
+	}
+	prov, err := resolveProvider(cfg.APIFormat)
+	if err != nil {
+		return "", err
 	}
 	if maxTurns <= 0 {
 		maxTurns = 10
 	}
-
-	messages := []openai.ChatCompletionMessage{
-		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
-		{Role: openai.ChatMessageRoleUser, Content: userPrompt},
-	}
-
-	for turn := 0; turn < maxTurns; turn++ {
-		resp, err := client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-			Model:    LLMModel,
-			Messages: messages,
-			Tools:    toolsToOpenAI(),
-			// reasoning_split 让思考内容分离到 reasoning_details，不污染 content
-			// extra_body 走 http body field, OpenAI Go SDK 通过 ChatCompletionRequest 不直接支持
-			// 所以 M3 的 reasoning_split 在 response 阶段用下面的兜底处理
-		})
-		if err != nil {
-			return "", fmt.Errorf("LLM call failed: %w", err)
-		}
-		if len(resp.Choices) == 0 {
-			return "", fmt.Errorf("LLM returned no choices")
-		}
-
-		msg := resp.Choices[0].Message
-		// 把整个 message（含 tool_calls）追加到 history
-		messages = append(messages, msg)
-
-		// 没有 tool call → 完成
-		if len(msg.ToolCalls) == 0 {
-			return msg.Content, nil
-		}
-
-		// 执行所有 tool calls，把结果追加
-		for _, tc := range msg.ToolCalls {
-			result := executeTool(tc)
-			messages = append(messages, openai.ChatCompletionMessage{
-				Role:       openai.ChatMessageRoleTool,
-				Content:    result,
-				ToolCallID: tc.ID,
-			})
-		}
-	}
-	return "", fmt.Errorf("max turns (%d) exceeded", maxTurns)
+	return prov.run(ctx, cfg, applyGlobalPrompt(cfg.GlobalPrompt, systemPrompt), userPrompt, maxTurns)
 }
+
+// fallbackAPIKey 迁移前的部署靠环境变量 / /config.env 提供 key。
+// 新配置没填时才走这里，保证升级不炸。
+func fallbackAPIKey() string {
+	if k := os.Getenv("MINIMAX_API_KEY"); k != "" {
+		return strings.TrimSpace(k)
+	}
+	data, err := os.ReadFile("/config.env")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "MINIMAX_API_KEY=") {
+			return strings.Trim(strings.TrimPrefix(line, "MINIMAX_API_KEY="), "\"'")
+		}
+	}
+	return ""
+}
+
+// pbApp 返回全局 PocketBase app（main.go 里注入）
+var _app core.App
+
+func SetApp(app core.App) { _app = app }
+
+func pbApp() core.App { return _app }

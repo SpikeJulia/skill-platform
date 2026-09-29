@@ -206,3 +206,9 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
     涉及 4 处：`tabs.svelte`、`tabs-list.svelte`、`tabs-trigger.svelte`。
     改成 `data-[orientation=horizontal]:` / `group-data-[orientation=horizontal]/tabs:`。
     通用判据：**bits-ui/shadcn 组件里凡是 `data-*:` 变体，先去实际 DOM 里查属性叫什么**
+16. **PocketBase 的 record id 长度是死的 15 字符** → `llm_config` 种子记录 `rec.Id = "llmconfig"`
+    太短（13）、`"llmconfig00000001"` 太长（16），两次迁移都直接失败。改用 `llmconfig000001`。
+    写 migration 时不要凭直觉估长度
+17. **国内 MiniMax 的 Anthropic 端点是 `api.minimaxi.com`，不是 `api.minimax.io`** → 同一个 key 直连
+    测出来 `.io` 返回 401 invalid api key，`.com` 返回 200。默认端点与前端下拉默认值都用后者。
+    换 provider 时这类域名要实测，不要照抄文档里的国际站

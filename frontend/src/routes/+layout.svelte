@@ -5,14 +5,16 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
-	import { Search, Package, Home, Settings, RefreshCw } from '@lucide/svelte';
+	import { Search, Package, Home, Settings, RefreshCw, Plug } from '@lucide/svelte';
 	import AgentManagerDialog from '$lib/components/AgentManagerDialog.svelte';
+	import AgentConfigDialog from '$lib/components/AgentConfigDialog.svelte';
 	import { loadAgents } from '$lib/agents-state.svelte';
 
 	const { children } = $props();
 
 	let searchQuery = $state('');
 	let settingsOpen = $state(false);
+	let configOpen = $state(false);
 
 	// 刷新只在主页有意义（主页才有 skill 列表和 tab），别的页面不放
 	const onHome = $derived(page.url.pathname === '/');
@@ -71,6 +73,14 @@
 				<Button
 					variant="ghost"
 					size="icon"
+					onclick={() => (configOpen = true)}
+					title="Agent 配置（模型 / 提示词）"
+				>
+					<Plug class="h-4 w-4" />
+				</Button>
+				<Button
+					variant="ghost"
+					size="icon"
 					onclick={() => (settingsOpen = true)}
 					title="管理 agent tabs"
 				>
@@ -81,6 +91,7 @@
 	</header>
 
 	<AgentManagerDialog bind:open={settingsOpen} />
+	<AgentConfigDialog bind:open={configOpen} />
 
 	<main class="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
 		{@render children?.()}

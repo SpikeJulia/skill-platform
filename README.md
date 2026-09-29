@@ -2,10 +2,9 @@
 
 # 🗂️ Skill Platform
 
-#### 自己管 skill 的一个小平台，跑在 Mac mini 上
+#### 自己管 skill 的小平台
 
 [![License](https://img.shields.io/badge/License-MIT-10B981?style=for-the-badge)](./LICENSE)
-[![Stack](https://img.shields.io/badge/Stack-PocketBase_0.25%20%2B%20SvelteKit-3B82F6?style=for-the-badge)](#-技术栈)
 [![MrTang-Skills](https://img.shields.io/badge/MrTang_Skills-8B5CF6?style=for-the-badge)](https://github.com/SpikeJulia/MrTang-Skills)
 
 ![Claude Code](https://img.shields.io/badge/Claude_Code-Compatible-D97706?style=flat-square&logo=anthropic&logoColor=white)
@@ -14,8 +13,9 @@
 
 </div>
 
-自己搭着搭着就顺手抽出来的一个东西。起因很简单：skill 越攒越多，但「有哪些、谁在用、装没装上」全靠翻文件夹，
-每次都得靠记忆。
+自己搭着搭着顺手抽出来的一个东西。起因很简单：skill 越攒越多，但「我到底有哪些、装没装上」全靠翻文件夹，每次都得靠记忆。
+
+装一次，所有 agent 都能用。
 
 ---
 
@@ -23,25 +23,29 @@
 
 | 名字 | 一句话 |
 |---|---|
-| 🗂️ [**它能做什么**](#-它能做什么) | 浏览、搜索、按 agent 分 tab、拖排序、管 agent 名单 |
-| 📦 [**快速开始**](#-快速开始) | 一条 `docker compose` |
-| 🔌 [**投递链**](#-投递链) | 平台写文件，launchd 建软链 |
-| 🧱 [**技术栈**](#-技术栈) | 单容器，PB + Go hooks + SvelteKit |
-| ⚠️ [**已知限制**](#️-已知限制) | 还差点东西 |
+| 📦 [**快速开始**](#-快速开始) | 一条命令 |
+| ✨ [**它能做什么**](#-它能做什么) | 看得清、找得到、管得住 |
+| 🌐 [**谁能用**](#-谁能用) | 任何会读 skill 目录的 agent |
+| 📄 [**更多细节**](#-更多细节) | 想改的话看这里 |
 
 ---
 
 ## 📦 快速开始
 
+要装 Docker，然后：
+
 ```bash
 git clone https://github.com/SpikeJulia/skill-platform.git
 cd skill-platform
 docker compose up -d --build
-open http://127.0.0.1:8090
 ```
 
-要一个 `MINIMAX_API_KEY` 放 `~/AI/asr/config.env`（compose 里挂进去当 `MINIMAX_API_KEY_FILE`）。
-**只想浏览和管理 skill、不用语义搜索和组合功能的话，这个 key 可以先不配**，那几个接口返回不了而已，别的照常用。
+浏览器打开 `http://127.0.0.1:8090` 就能用了。
+
+界面上的浏览、搜索、排序、管理都不用配任何东西。
+
+**只有「用一句话描述来找 skill」这类功能**需要一个模型 API 密钥（就是 AI 服务那边的那个 key），
+放进一个配置文件告诉平台就行。没有它，那几个功能用不了，别的照常。
 
 ---
 
@@ -50,143 +54,92 @@ open http://127.0.0.1:8090
 <table>
 <tr><td>
 
-### 🗂️ 浏览与搜索
+### 🗂️ 看得清
 
-> *"我有五个 agent，skill 装没装上全靠 `ls`。少一个装不上，还不一定看得出来。"*
-
-主页一屏看全部 skill，搜索框就在顶栏，不用切页面。
+> *"我到底装了多少个 skill，愣是没答上来。"*
 
 **为什么需要这个**
 
-skill 一旦过十个，靠翻目录就废了——更要命的是「你看到的」和「agent 实际能用的」经常不是一回事。
+skill 一多，靠翻文件夹就废了。更麻烦的是「你看到的」和「agent 实际能用的」经常不是一回事——同一个 skill，有的 agent 有、有的没有，界面上却只看得到一份。
 
 **它能做什么**
 
-- 🔍 **顶栏搜索** — 名字和描述本地匹配，不调 LLM，敲完就出结果
-- 🏷️ **按 agent 分 tab** — `全部 / minimax / codex / …`，看某个 agent 到底装了哪些
-- 🔗 **「其他 agent 还有 N 个匹配」** — 在「全部」里搜到的东西，顺手告诉你哪些是别的 agent 专属的，点一下就切过去
-- 📄 **看 SKILL.md 原文**，不用 `cat`
+- 📋 **一屏看全部** — 有哪些、什么描述，一眼扫完
+- 🔍 **顶栏搜索** — 敲关键词就出结果
+- 🏷️ **按 agent 分页签** — 点进去看某个 agent 到底装了哪些
+- 💬 **搜到了别的 agent 专属的会提示你** — 「其他 agent 还有 3 个匹配」，点一下就切过去看
 
 </td></tr>
 <tr><td>
 
-### ↕️ 拖拽排序
+### ↕️ 排得顺
 
-> *"排序本来就是件小事——直到你发现它会把你没看见的东西删掉。"*
-
-卡片直接拖，顺序存本地。
+> *"排序本来是件顺手的事，直到我发现它把我没看见的东西弄没了。"*
 
 **为什么需要这个**
 
-不是排序本身，是排序的时候**正在筛选**。旧库那个实现把筛选结果直接写回列表，
-你在搜索状态下拖一次，就真把搜不到的那批 skill 弄没了。
+不是排序本身，是**一边搜索一边排序**的时候最容易出事。早期版本会把屏幕上没显示的那些漏掉，一拖就真没了。
 
 **它能做什么**
 
-- 🎯 **拖的是原始数组的 id，不是可见列表的下标** — 搜索和 tab 开着也能拖
-- 🫳 **跟手的浮动卡片** — 拖起来是"拎着"的感觉，不是两张卡瞬间换位
-- 💾 **顺序存 localStorage** — 不入库，重启容器还在
-
-**踩过的坑**
-
-`svelte-dnd-action` 0.9.79 在 Svelte 5 下会把被拖的节点摘出 DOM 再隐藏挂回，表现为"拖一个少一个"。
-所以这两处排序都是自己写的 pointer 拖拽。细节在 [docs/architecture.md](./docs/architecture.md)。
+- 🎯 **拖一下就改顺序**，改完自动记住，下次打开还在
+- 🔒 **开着搜索也能拖** — 不会把没显示出来的那些顺带弄丢
 
 </td></tr>
 <tr><td>
 
-### ⚙️ agent 名单管理
+### ⚙️ 管得住
 
-> *"平台里少一个 agent，它的 skill 目录就永远同步不到——而且不报错。"*
-
-agent 列表在平台上增删，写进 PocketBase。
+> *"有个 agent 一直没收到新 skill，查了两天才发现是名单里少了它。"*
 
 **为什么需要这个**
 
-投递链是拿平台的 agent 名单去建软链的。名单和实际装着的 agent 对不上时，
-**表现是静默失败**：那边收不到新 skill，日志也不报错，最难查。
+往各 agent 装东西是按一份名单来的。名单和实际用着的对不上时，**不会报错**——那边就是安静地收不到，最难查。
 
 **它能做什么**
 
-- ➕ **加 / 删 agent** — 删之前确认一次，入口在顶栏齿轮
-- 🧱 **名单随便增删**，不是写死的（现在留了 `全部 / minimax / codex` 三个）
-- 🚨 **不做"补全"** — 平台里没有的 agent 就是没有了，不会自作主张给你加回来
+- ➕ **加 / 删 agent** — 删之前会问你一次
+- 🧩 **名单随便改**，不是写死的几个
+- 🧹 **不乱加** — 名单里没有的 agent，它就是没有，不会自作主张给你补回来
 
 </td></tr>
 <tr><td>
 
-### 🔌 投递链
+### 🔌 装一次，所有 agent 都能用
 
-> *"'在 Docker 里建软链' 这件事我试了很久，它是做不到的。"*
-
-平台把 skill 写成文件，launchd 在宿主机上建软链。
+> *"同一个 skill 抄五份，五份很快就会不一样。"*
 
 **为什么需要这个**
 
-容器里 `$HOME=/root`，看不到宿主的 home。`sync.sh` 在容器内跑是**空转**——
-以前 `install.go` 里那句还被 `SafeBash` 吞了错误，返回体看着挺正常，误导了很久。
+不同 agent 各放一份，改一处要同步改五处，很快就会走偏。
 
 **它能做什么**
 
-- 📝 **平台只写文件** — `/skills` 和 `/personal` 是可写挂载
-- 🔗 **软链交给 launchd** — `WatchPaths` 监听增删 + `StartInterval=300` 兜底
-- 🔒 **专属库物理隔离** — 别的 agent 的专属 skill 要领用，是**复制**进你自己的库，不是软链过去
-
-**⚠️ 一条铁律：`sync.sh` 永远只能在宿主机跑。**
-
-</td></tr>
-<tr><td>
-
-### 🤖 13 个 API
-
-> *"界面够用的话，剩下的就当后台服务用。"*
-
-13 个接口，前端只用了其中一部分，剩下的留给脚本和别的 agent。
-
-**它能做什么**
-
-| | 接口 | 调 LLM |
-|---|---|---|
-| 📋 | `GET /api/skills` | ❌ |
-| 📄 | `GET /api/skills/{name}` | ❌ |
-| 🗑️ | `DELETE /api/skills/{name}` | ❌ |
-| 📥 | `POST /api/install/content` | ❌ |
-| 🔗 | `POST /api/install/url` | ✅ |
-| 🔍 | `POST /api/find` | ✅ |
-| 👥 | `GET /api/agents` | ❌ |
-| 👥 | `POST /api/agents` | ❌ |
-| 👥 | `DELETE /api/agents/{name}` | ❌ |
-| 🧩 | `POST /api/agent/compose` | ✅ |
-| 🎼 | `POST /api/agent/orchestrate` | ✅ |
-| 🔀 | `POST /api/agent/merge` | ✅ |
-| 🧬 | `POST /api/agent/evolve` | ✅ |
+- 🔗 **装一次** — 自动出现在每个 agent 的 skill 目录下
+- ✏️ **改一处，全体生效** — 因为大家指的是同一份
+- 🧱 **专属能力可以单独装** — 只给某个 agent 用，不影响别人
 
 </td></tr>
 </table>
 
 ---
 
-## 🧱 技术栈
+## 🌐 谁能用
 
-- **单容器**：PocketBase 0.25（Go 单二进制）+ SvelteKit 静态前端，静态产物 `go:embed` 进二进制
-- **数据**：`~/AI/skill-platform-data/`（PB SQLite）
-- **前端**：SvelteKit 2 + Svelte 5 + Tailwind 4 + shadcn-svelte
-- **模型**：MiniMax-M3 直调
-- **投递**：宿主 launchd（如 `com.<你>.agent-skills-sync`）建软链
+任何会读自己 skill 目录的 agent 都行——把 agent 加进平台，链接就自动建好了，不用手动配。
 
-架构细节和 12 条修复记录在 [docs/architecture.md](./docs/architecture.md)，运维在 [docs/operations.md](./docs/operations.md)。
+Claude Code、Codex、OpenCode 都能接。
 
-**🌐 兼容任何读 `~/.<agent>/skills/` 的 agent** — 把 agent 加进平台，`sync.sh` 就会建对应的软链。
-Claude Code / Codex / OpenCode 都能接。
+界面之外还留了一组接口，脚本或者别的 agent 想直接调用也行。
 
 ---
 
-## ⚠️ 已知限制
+## 📄 更多细节
 
-- 仅本机，`127.0.0.1:8090`，没有 Tailscale 暴露
-- 排序只存 localStorage，没进 PB
-- Auth 关闭（localhost 默认安全）
-- 不接 pi，节点画布也没做
+想改点什么、或者用着出问题了：
+
+- [docs/architecture.md](./docs/architecture.md) — 它是怎么搭的
+- [docs/operations.md](./docs/operations.md) — 日常怎么维护
 
 ---
 

@@ -54,6 +54,7 @@
 | `/api/skills` | GET | ❌ | hooks/skills.go |
 | `/api/skills/{name}` | GET | ❌ | hooks/skills.go |
 | `/api/skills/{name}` | DELETE | ❌ | hooks/skills.go |
+| `/api/unmanaged` | GET | ❌ | hooks/skills.go |
 | `/api/agents` | GET/POST | ❌ | hooks/agents.go |
 | `/api/agents/{name}` | PATCH/DELETE | ❌ | hooks/agents.go |
 | `/api/install/content` | POST | ❌ | hooks/install.go |
@@ -124,8 +125,33 @@ src/
 - 拖完松手浏览器会补一个 `click`，用**时间戳**抑制而非布尔标记（重排后 pointerup 与 click 的
   target 常常不是同一张卡，布尔标记会一直没被消费，反而吃掉后面一次真实点击）
 
-## 关键修复记录
+## 未纳管清单（v0.3）
 
+容器只挂载了中央源和专属源，**看不到 `~/.<agent>/skills/` 和 `~/.<agent>/.builtin-skills/`**。
+后果是：agent 能正常调用的 skill，平台一个都列不出来，而且不报错——
+「平台没有这个 skill」有两种可能（压根不存在 / 存在但没纳管），界面上分不出来。
+
+agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的挂载是静态的，没法自动把这些目录挂进去。
+所以走**宿主侧采集、容器侧只读**：
+
+```
+宿主 sync.sh 扫 ~/.<agent>/skills/ 和 .builtin-skills/
+   └─ 写 ~/AI/agent-skills-personal/.unmanaged.json   ← 该目录已挂进容器
+平台 GET /api/unmanaged 读 /personal/.unmanaged.json
+```
+
+清单文件名以 `.` 开头，因此 `ListSkills()` 扫专属源时不会把它当成一个 skill 目录。
+清单不存在或 JSON 坏了都返回空列表（HTTP 200），不让这个补充接口成为新的故障源。
+
+清单里两种 kind：
+
+- `local` — `~/.<agent>/skills/<name>` 是真目录（不是软链）。可纳管，界面给一行
+  `mv` 到专属源再跑 sync.sh 的命令。**用 `mv` 不用 `cp`**：cp 会留下真目录，sync.sh 撞上
+  「已存在真内容」就跳过，软链永远建不出来，两份还会各自漂移。
+- `builtin` — agent 自带的（`~/.minimax/.builtin-skills/` 那 20 个），会随版本自动更新，
+  按设计不纳管，列出来只是让你知道它们存在。
+
+## 关键修复记录
 实施过程踩过的坑：
 
 1. **sashabaranov/go-openai 版本不存在**（v0.20.5）→ 改 v1.42.1
@@ -151,3 +177,9 @@ src/
     关闭动画的 Promise 永不落定，Dialog 卡在 `data-state="closed"` 却不卸载。
     真实使用碰不到（要点击就必须可见），但 headless 自动化会随机中招 →
     测试里加 `Emulation.setFocusEmulationEnabled`
+13. **未纳管检测挂在错的位置** → 最初只在「源里有同名 skill、但目标位置是真目录」时记录。
+    但两个同步分支都只遍历**源**里的 skill，一个中央源/专属源里没有对应项、
+    只是自己躺在 `~/.minimax/skills/` 的目录，整个循环根本不会走到它 ——
+    恰恰这就是最该被看见的那类。改为单独扫一遍 agent 目录里已有的真目录
+14. **`[ -L "$dir/" ]` 判不出软链** → 路径带尾斜杠时 `-L` 判的是目录而非那个软链本身，
+    12 个**已纳管的软链全被误报成未纳管**。扫描时不能写 `*/`，且要先判 `-L` 再判 `-d`

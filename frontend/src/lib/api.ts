@@ -39,6 +39,17 @@ export interface AgentResponse {
 	target_path?: string;
 }
 
+// 平台管不到、但确实存在的 skill（由宿主 sync.sh 扫描生成清单）
+// kind: "local" = ~/.<agent>/skills/ 里的真目录，可纳管
+//       "builtin" = agent 自带的，会自动更新，不该纳管
+export interface Unmanaged {
+	agent: string;
+	name: string;
+	kind: 'local' | 'builtin';
+	path: string;
+	description: string;
+}
+
 // v0.2.1: Agent tab（来自 PB agent_tabs collection + 系统固定的 "all"）
 export interface Agent {
 	id?: string;
@@ -79,6 +90,10 @@ export const api = {
 		request<{ deleted: string; path: string; note: string }>(`/skills/${encodeURIComponent(name)}`, {
 			method: 'DELETE'
 		}),
+
+	// ===== 未纳管（平台管不到但存在的 skill）=====
+	// 清单不存在时后端返回空列表，不会报错
+	listUnmanaged: () => request<{ unmanaged: Unmanaged[]; count: number }>('/unmanaged'),
 
 	// ===== Install =====
 	installContent: (name: string, content: string) =>

@@ -55,3 +55,23 @@ func deleteSkill(c *core.RequestEvent) error {
 
 // 用于检查文件存在
 var _ = fmt.Sprintf
+
+// listUnmanaged GET /api/unmanaged - 列出平台管不到的 skill
+//
+// 为什么需要这个：容器只挂载了中央源和专属源，~/.<agent>/skills/ 与
+// ~/.<agent>/.builtin-skills/ 都看不到。agent 名单又是动态的，docker-compose
+// 没法静态挂载这些目录。所以由宿主侧的 sync.sh 扫描后写一份清单到专属源目录
+// （personalDir()/.unmanaged.json），平台只负责读。
+//
+// 没有这个接口，「这个 skill 平台没有」有两种可能——压根不存在，或存在但没纳管——
+// 而界面上分不出来，是纯静默盲区。
+func listUnmanaged(c *core.RequestEvent) error {
+	items, err := ListUnmanaged()
+	if err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(200, map[string]any{
+		"unmanaged": items,
+		"count":     len(items),
+	})
+}

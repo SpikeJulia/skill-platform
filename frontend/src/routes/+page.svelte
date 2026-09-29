@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type Skill } from '$lib/api';
+	import { api, type Skill, type Unmanaged } from '$lib/api';
 	import { agentsState, loadAgents } from '$lib/agents-state.svelte';
 	import { Card } from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
@@ -20,7 +20,12 @@
 		Lock,
 		RefreshCw,
 		X,
-		Search
+		Search,
+		EyeOff,
+		Copy,
+		Check,
+		FolderInput,
+		PackageOpen
 	} from '@lucide/svelte';
 	import { flip } from 'svelte/animate';
 	import { goto } from '$app/navigation';
@@ -29,6 +34,33 @@
 	let selected = $state<Set<string>>(new Set());
 	let loading = $state(true);
 	let error = $state('');
+
+	// 未纳管：平台管不到但确实存在的 skill。
+	// 容器看不到 ~/.<agent>/skills/，所以这份清单由宿主 sync.sh 生成、平台只读。
+	let unmanaged = $state<Unmanaged[]>([]);
+	let showUnmanaged = $state(false);
+	let copiedName = $state('');
+
+	const localUnmanaged = $derived(unmanaged.filter((u) => u.kind === 'local'));
+	const builtinUnmanaged = $derived(unmanaged.filter((u) => u.kind === 'builtin'));
+
+	// 纳管 = 把真目录 mv 进专属源，重跑 sync.sh 后就变成软链。
+	// 容器读不到宿主 home，所以这步只能给命令让用户跑，不能由后端代劳。
+	function claimCommand(u: Unmanaged): string {
+		return `mv "${u.path}" ~/AI/agent-skills-personal/${u.agent}/ && bash ~/AI/agent-skills/sync.sh`;
+	}
+
+	async function copyClaim(u: Unmanaged, e: MouseEvent) {
+		e.stopPropagation();
+		const cmd = claimCommand(u);
+		try {
+			await navigator.clipboard.writeText(cmd);
+			copiedName = u.agent + '/' + u.name;
+			setTimeout(() => (copiedName = ''), 1500);
+		} catch {
+			alert('复制失败，请手动选中下面的命令');
+		}
+	}
 
 	// 当前 tab：'all' | 某个 agent 名
 	let activeTab = $state<string>('all');
@@ -295,6 +327,13 @@
 			skills = applyOrder(skillsRes.skills);
 			error = '';
 			await loadAgents();
+			// 未纳管清单拿不到不影响主列表（sync.sh 没跑过时就是空的）
+			try {
+				const uRes = await api.listUnmanaged();
+				unmanaged = uRes.unmanaged;
+			} catch {
+				unmanaged = [];
+			}
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -589,6 +628,97 @@
 					</div>
 				</div>
 			{/each}
+		</section>
+	{/if}
+
+	<!-- 未纳管：平台列不出来、但 agent 确实能用的 skill -->
+	{#if unmanaged.length > 0}
+		<section data-unmanaged-section class="border-t border-border pt-4">
+			<button
+				data-unmanaged-toggle
+				onclick={() => (showUnmanaged = !showUnmanaged)}
+				class="flex w-full items-center gap-2 text-left text-sm text-muted-foreground hover:text-foreground"
+			>
+				<EyeOff class="h-4 w-4" />
+				<span>
+					还有 <strong class="text-foreground">{unmanaged.length}</strong> 个 skill 平台管不到
+					{#if localUnmanaged.length > 0}
+						（其中 <strong class="text-amber-600">{localUnmanaged.length}</strong> 个可以纳管）
+					{/if}
+				</span>
+				<span class="ml-auto text-xs">{showUnmanaged ? '收起' : '展开'}</span>
+			</button>
+
+			{#if showUnmanaged}
+				<!-- 可纳管：~/.<agent>/skills/ 里的真目录，agent 能用但平台列不出来 -->
+				{#if localUnmanaged.length > 0}
+					<div class="mt-3 space-y-2">
+						<p class="text-xs text-muted-foreground">
+							这些在你的 agent 目录里，agent 能正常调用，但平台看不见。要纳管就把目录移进专属源，
+							再跑一次 sync.sh —— 之后它会自动变成软链，平台也就列出来了。
+						</p>
+						{#each localUnmanaged as u (u.agent + '/' + u.name)}
+							{@const cmd = claimCommand(u)}
+							{@const copied = copiedName === u.agent + '/' + u.name}
+							<div
+								data-unmanaged-local={u.name}
+								class="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3"
+							>
+								<div class="flex items-start gap-2">
+									<FolderInput class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+									<div class="min-w-0 flex-1">
+										<div class="flex items-center gap-2">
+											<span class="font-medium text-foreground">{u.name}</span>
+											<Badge variant="outline" class="px-1.5 py-0 text-[10px] text-amber-600">
+												{u.agent}
+											</Badge>
+										</div>
+										{#if u.description}
+											<p class="mt-1 line-clamp-2 text-xs text-muted-foreground">{u.description}</p>
+										{/if}
+										<div class="mt-2 flex items-center gap-2">
+											<code
+												class="flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground"
+												title={cmd}
+											>
+												{cmd}
+											</code>
+											<Button size="sm" variant="outline" onclick={(e) => copyClaim(u, e)}>
+												{#if copied}
+													<Check class="mr-1 h-3.5 w-3.5" /> 已复制
+												{:else}
+													<Copy class="mr-1 h-3.5 w-3.5" /> 复制命令
+												{/if}
+											</Button>
+										</div>
+									</div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{/if}
+
+				<!-- agent 自带：会自动更新，不该纳管，只列出来免得以为平台漏了 -->
+				{#if builtinUnmanaged.length > 0}
+					<div class="mt-4">
+						<p class="text-xs text-muted-foreground">
+							另外这 {builtinUnmanaged.length} 个是 agent 自带的（会随版本自动更新），
+							按设计不纳管，列出来只是让你知道它们存在。
+						</p>
+						<div class="mt-2 flex flex-wrap gap-1.5">
+							{#each builtinUnmanaged as u (u.agent + '/' + u.name)}
+								<span
+									title={u.description || u.path}
+									class="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] text-muted-foreground"
+								>
+									<PackageOpen class="h-3 w-3" />
+									{u.name}
+								</span>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			{/if}
 		</section>
 	{/if}
 </div>

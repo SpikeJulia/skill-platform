@@ -14,7 +14,8 @@
 		"format": "prettier --write .",
 		"lint": "prettier --check . && eslint .",
 		"test:reorder": "node scripts/agent-reorder-e2e.mjs",
-		"test:home-drag": "node scripts/home-drag-e2e.mjs"
+		"test:home-drag": "node scripts/home-drag-e2e.mjs",
+		"test:unmanaged": "node scripts/unmanaged-e2e.mjs"
 	},
 	"devDependencies": {
 		"@eslint/compat": "^1.2.5",

@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -20,6 +21,52 @@ type SkillInfo struct {
 	//   - ["all"] 表示中央源（所有 agent 都有）
 	//   - ["minimax", "codex"] 等表示专属
 	Agents      []string `json:"agents"`
+}
+
+// UnmanagedInfo 描述一个「存在但平台管不到」的 skill。
+// 由宿主 sync.sh 扫描 ~/.<agent>/skills/ 与 ~/.<agent>/.builtin-skills/ 生成。
+type UnmanagedInfo struct {
+	Agent       string `json:"agent"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"` // "local" 可纳管 / "builtin" agent 自带
+	Path        string `json:"path"`
+	Description string `json:"description"`
+}
+
+// unmanagedFile 清单文件路径：放在专属源里（该目录已挂载进容器），
+// 文件名以 . 开头，所以 ListSkills 扫专属源时不会把它当成一个 skill 目录。
+func unmanagedFile() string {
+	return filepath.Join(personalDir(), ".unmanaged.json")
+}
+
+// ListUnmanaged 读取宿主 sync.sh 生成的未纳管清单。
+//
+// 清单不存在是正常状态（sync.sh 还没跑过），返回空列表而不是报错——
+// 这只是个可见性补充，不该成为 /api/skills 之外的故障源。
+func ListUnmanaged() ([]UnmanagedInfo, error) {
+	data, err := os.ReadFile(unmanagedFile())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []UnmanagedInfo{}, nil
+		}
+		return nil, err
+	}
+	var items []UnmanagedInfo
+	if err := json.Unmarshal(data, &items); err != nil {
+		// 清单是 sync.sh 的输出，写坏了不该让整个接口挂掉
+		fmt.Fprintf(os.Stderr, "warn: unmanaged manifest malformed: %v\n", err)
+		return []UnmanagedInfo{}, nil
+	}
+	if items == nil {
+		return []UnmanagedInfo{}, nil
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Agent != items[j].Agent {
+			return items[i].Agent < items[j].Agent
+		}
+		return items[i].Name < items[j].Name
+	})
+	return items, nil
 }
 
 // skillsDir 优先用 SKILLS_DIR 环境变量（宿主机直接跑时覆盖）

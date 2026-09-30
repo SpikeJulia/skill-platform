@@ -2,7 +2,13 @@
 <html lang="zh-CN">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
+		<!--
+			?v=2 是缓存版本号，换图标时必须一起加一。
+			浏览器按 URL 缓存 favicon：URL 不变就一直用旧图，即使文件内容已经换了。
+			加版本号后 URL 变成新地址，普通刷新就会被认出来重新取。
+			（实测：文档是新的前提下，图标 URL 一变，普通刷新即生效，不需要硬刷新。）
+		-->
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg?v=2" type="image/svg+xml" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		%sveltekit.head%
 	</head>

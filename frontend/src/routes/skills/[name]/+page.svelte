@@ -7,13 +7,15 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Separator } from '$lib/components/ui/separator';
-	import { ArrowLeft, Trash2, Sparkles, Layers, Workflow, GitMerge, Copy, Check } from '@lucide/svelte';
+	import { ArrowLeft, Trash2, FolderInput, Sparkles, Layers, Workflow, GitMerge, Copy, Check } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { marked } from 'marked';
+	import MoveSkillDialog from '$lib/components/MoveSkillDialog.svelte';
 
 	let skill = $state<SkillDetail | null>(null);
 	let error = $state('');
 	let loading = $state(true);
+	let moveOpen = $state(false);
 
 	// Agent ops state
 	let agentResult = $state<AgentResponse | null>(null);
@@ -135,9 +137,14 @@
 						{#if copied}<Check class="h-3 w-3 text-green-600" />{:else}<Copy class="h-3 w-3" />{/if}
 					</button>
 				</div>
-				<Button variant="outline" size="sm" onclick={uninstall}>
-					<Trash2 class="mr-1 h-4 w-4" /> 卸载
-				</Button>
+				<div class="flex gap-2">
+					<Button variant="outline" size="sm" onclick={() => (moveOpen = true)} data-move-open>
+						<FolderInput class="mr-1 h-4 w-4" /> 移动
+					</Button>
+					<Button variant="outline" size="sm" onclick={uninstall}>
+						<Trash2 class="mr-1 h-4 w-4" /> 卸载
+					</Button>
+				</div>
 			</div>
 		</div>
 
@@ -214,3 +221,12 @@
 		</Card>
 	{/if}
 </div>
+
+{#if skill}
+	<MoveSkillDialog
+		bind:open={moveOpen}
+		skillName={skill.name}
+		currentAgent={skill.agent}
+		onMoved={load}
+	/>
+{/if}

@@ -22,6 +22,7 @@ func Register(app core.App) {
 		se.Router.GET("/api/skills", listSkills)
 		se.Router.GET("/api/skills/{name}", getSkill)
 		se.Router.DELETE("/api/skills/{name}", deleteSkill)
+		se.Router.POST("/api/skills/move", moveSkill)
 
 		// ===== /api/unmanaged — 平台管不到、但确实存在的 skill =====
 		se.Router.GET("/api/unmanaged", listUnmanaged)

@@ -3,7 +3,6 @@ package hooks
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -27,10 +26,18 @@ func getSkill(c *core.RequestEvent) error {
 	if err != nil {
 		return c.JSON(404, map[string]string{"error": err.Error()})
 	}
+	// path / agent 都要按**实际所在位置**给，不能一律拼中央源——
+	// 专属库里的 skill 原来会显示成中央源的路径，误导人以为它在共享库里。
+	realPath, agent, err := locateSkill(name)
+	if err != nil {
+		return c.JSON(404, map[string]string{"error": err.Error()})
+	}
 	return c.JSON(200, map[string]any{
-		"name":      name,
-		"content":   content,
-		"path":      filepath.Join(skillsDir(), name),
+		"name":       name,
+		"content":    content,
+		"path":       realPath,
+		"agent":      agent,
+		"isCentral":  agent == "all",
 		"hasSkillMD": true,
 	})
 }

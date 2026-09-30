@@ -233,3 +233,16 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
     但实测 MiniMax 在**不带 beta 头**的情况下就认这个字段，
     所以用 `option.WithJSONSet("output_config", …)` 往稳定请求体注入顶层键即可，
     不必为了这一个字段把整个适配器换成 beta API。
+20. **同一个坑的第二次出现：bits-ui v2 把 `data-active` 换成了 `data-state="active"`** →
+    `tabs-trigger.svelte` 里激活态写的是 `data-active:bg-background`（找 `[data-active]`），
+    而 bits-ui v2 实际输出的是 `data-state="active"`，**变体永不匹配**，
+    激活的 tab 和没激活的 tab 背景都是 transparent，看不出选中哪个。
+    和第 15 条的 `data-horizontal` 是同一类迁移遗漏。
+    统一改成 `data-[state=active]:`。
+    为什么一直没被发现：主页的 agent tab 是自己写的、没用 shadcn 的 `Tabs`，
+    只有安装页在用，所以全站只有那一处症状。**改 shadcn 组件前先在真实 DOM 里
+    `getComputedStyle` 量一次，不要看类名猜。**
+21. **`ReadSkillMD` 只查中央源 → 专属库的 skill 详情页 404** → 它用 `SafePath` 拼路径，
+    那是中央源。装到 agent 专属库的 skill 根本打不开详情页，agent 的
+    组合/合并/进化也读不到它。改成走 `locateSkill`（中央源优先，与 ListSkills 一致）。
+    这是做「移动」功能时发现的——不修的话 skill 一挪进专属库就打不开了。

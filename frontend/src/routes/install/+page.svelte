@@ -6,12 +6,14 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/tabs';
 	import { Badge } from '$lib/components/ui/badge';
-	import { ArrowLeft, ClipboardPaste, Link2, Loader2, Globe, Lock } from '@lucide/svelte';
+	import { ArrowLeft, ClipboardPaste, Link2, Loader2, Globe, Lock, Bot } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { agentsState, loadAgents } from '$lib/agents-state.svelte';
 
-	let tab = $state<'content' | 'url'>('content');
+	// 默认走 URL 安装：多数人来这个页面就是手里有个链接，
+	// 粘贴内容是兜底路径（比如从别处抄来的 SKILL.md）。
+	let tab = $state<'url' | 'content'>('url');
 
 	// 安装目标：跟随主页当前 tab 传过来的 ?agent=xxx。
 	// all（或没传）= 中央源；具体 agent = 它的专属库。用户可以在下面改。
@@ -136,11 +138,11 @@
 	<Card class="p-6">
 		<Tabs bind:value={tab}>
 			<TabsList class="grid w-full grid-cols-2">
-				<TabsTrigger value="content">
-					<ClipboardPaste class="mr-1 h-4 w-4" /> 粘贴内容
-				</TabsTrigger>
 				<TabsTrigger value="url">
 					<Link2 class="mr-1 h-4 w-4" /> 粘贴 URL
+				</TabsTrigger>
+				<TabsTrigger value="content">
+					<ClipboardPaste class="mr-1 h-4 w-4" /> 粘贴内容
 				</TabsTrigger>
 			</TabsList>
 
@@ -176,6 +178,13 @@
 			</TabsContent>
 
 			<TabsContent value="url" class="space-y-4">
+				<div class="flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+					<Bot class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+					<p class="text-muted-foreground">
+						由 <strong class="text-foreground">agent 自动执行</strong>：克隆仓库 → 找到 SKILL.md → 写入
+						<span class="text-foreground">{targetLabel}</span> → 更新软链。通常 30 秒到 2 分钟。
+					</p>
+				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium text-foreground">URL</label>
 					<Input
@@ -185,16 +194,13 @@
 				</div>
 				<div>
 					<label class="mb-1 block text-sm font-medium text-foreground">
-						Skill 名 <span class="text-muted-foreground">(可选，让 LLM 决定)</span>
+						Skill 名 <span class="text-muted-foreground">(可选，让 agent 决定)</span>
 					</label>
 					<Input bind:value={urlName} placeholder="留空则从 SKILL.md frontmatter 取" />
 				</div>
-				<div class="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-					<strong>说明：</strong>URL 安装会调 LLM 跑 agent loop（git clone → 找 SKILL.md → 写到中央源 → 跑 sync.sh），可能需要 30 秒-2 分钟。
-				</div>
 				<Button onclick={installURL} disabled={urlLoading || !urlInput}>
 					{#if urlLoading}<Loader2 class="mr-1 h-4 w-4 animate-spin" />{/if}
-					调 LLM 安装
+					让 agent 安装
 				</Button>
 				{#if urlError}
 					<p class="text-sm text-destructive">❌ {urlError}</p>

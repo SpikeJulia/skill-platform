@@ -253,8 +253,12 @@ func extractDescription(content string) string {
 }
 
 // ReadSkillMD 读指定 skill 的 SKILL.md
+//
+// 中央源和专属源都找（中央源优先，与 ListSkills 的去重顺序一致）。
+// 原来只用 SafePath，也就是**只查中央源**——专属库里��� skill 一律 404，
+// 详情页打不开，agent 的组合/合并/进化也读不到它。
 func ReadSkillMD(name string) (string, error) {
-	path, err := SafePath(name)
+	path, _, err := locateSkill(name)
 	if err != nil {
 		return "", err
 	}

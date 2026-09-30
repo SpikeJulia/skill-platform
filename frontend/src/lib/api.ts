@@ -18,6 +18,9 @@ export interface SkillDetail {
 	name: string;
 	content: string;
 	path: string;
+	/** 实际所在位置：中央源为 "all"，专属库为对应 agent 名 */
+	agent: string;
+	isCentral: boolean;
 	hasSkillMD: boolean;
 }
 
@@ -132,6 +135,22 @@ export const api = {
 	deleteSkill: (name: string) =>
 		request<{ deleted: string; path: string; note: string }>(`/skills/${encodeURIComponent(name)}`, {
 			method: 'DELETE'
+		}),
+
+	// 在中央源和各 agent 专属库之间搬动 skill。
+	// targetAgent 空 = 中央源（所有 agent 都能用）；给值 = 只给该 agent 用。
+	moveSkill: (name: string, targetAgent: string) =>
+		request<{
+			moved: boolean;
+			unchanged?: boolean;
+			from: string;
+			to: string;
+			from_agent?: string;
+			target_agent: string;
+			note?: string;
+		}>('/skills/move', {
+			method: 'POST',
+			body: JSON.stringify({ name, target_agent: targetAgent })
 		}),
 
 	// ===== 未纳管（平台管不到但存在的 skill）=====

@@ -219,3 +219,17 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
     修法：**用同一个变体去顶**（`sm:max-w-3xl`）。`cn()` 走 tailwind-merge，
     调用方的 class 排在基础串后面，同组冲突它会自动把基础类剔掉。
     通用判据：**改 shadcn 组件的尺寸/颜色/间距，先看它自己带的是哪个变体，再用同名变体覆盖**
+19. **两个协议的"推理强度"参数名不一样，别只查一边** → 我只查了 OpenAI Responses 的
+    `reasoning.effort`，就断定 Anthropic 侧不支持，把界面上的「推理等级」在选 Anthropic 时置灰了。
+    实际上 Anthropic 侧叫 **`output_config.effort`**（取值 `low/medium/high/xhigh/max`），
+    MiniMax 的 Anthropic 兼容端点照单全收。
+    通用判据：**说"某协议不支持某参数"之前，用一个非法值去打真端点**——
+    返 `allowed: ...` 说明参数被识别了（只是值不对），返 200 且行为无差异才可能是不认。
+    这次就是靠传 `banana` 拿到 `invalid reasoning_effort: allowed: low, medium, high, xhigh, max`
+    才确认的，只看 200 和 thinking token 差异会被限流噪声带偏。
+
+    落地上还有个坑：官方 SDK v1.76 把 `output_config` 放在 **beta 命名空间**
+    （`BetaOutputConfigParam`），稳定版 `MessageNewParams` 既没这个字段也没有 `WithExtraFields`。
+    但实测 MiniMax 在**不带 beta 头**的情况下就认这个字段，
+    所以用 `option.WithJSONSet("output_config", …)` 往稳定请求体注入顶层键即可，
+    不必为了这一个字段把整个适配器换成 beta API。

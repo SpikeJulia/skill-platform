@@ -88,6 +88,19 @@ func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, u
 		maxTokens = anthropicMaxTokensRequired
 	}
 
+	// 推理等级：Anthropic 侧叫 output_config.effort（和 OpenAI 的 reasoning.effort
+	// 是两套参数名，但都是"让模型多想一点"的意思）。
+	// 官方 SDK v1.76 把这个字段放在 beta 命名空间（BetaOutputConfigParam），
+	// 稳定版 MessageNewParams 没有对应字段也没 WithExtraFields，
+	// 所以用 WithJSONSet 直接往请求体注入顶层键——实测 MiniMax 的
+	// Anthropic 兼容端点在不带 beta 头的情况下就认这个字段。
+	reqOpts := make([]option.RequestOption, 0, 1)
+	if cfg.ReasoningEffort != "" {
+		reqOpts = append(reqOpts, option.WithJSONSet("output_config", map[string]string{
+			"effort": cfg.ReasoningEffort,
+		}))
+	}
+
 	for turn := 0; turn < maxTurns; turn++ {
 		msg, err := client.Messages.New(ctx, anthropic.MessageNewParams{
 			Model:     cfg.Model,
@@ -95,7 +108,7 @@ func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, u
 			System:    []anthropic.TextBlockParam{{Text: systemPrompt}},
 			Messages:  messages,
 			Tools:     tools,
-		})
+		}, reqOpts...)
 		if err != nil {
 			return "", fmt.Errorf("Anthropic 调用失败: %w", err)
 		}

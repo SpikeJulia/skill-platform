@@ -145,6 +145,45 @@ func TestAnthropic_CustomHeadersOverrideAuth(t *testing.T) {
 	}
 }
 
+// Anthropic 侧的推理等级叫 output_config.effort（不是 OpenAI 的 reasoning.effort）。
+// 这条曾经被漏掉：UI 里能填能存能显示，请求里却没带，属于静默无效。
+func TestAnthropic_ReasoningEffortSentAsOutputConfig(t *testing.T) {
+	srv, cap := newCapture(t, func(c capturedRequest) string {
+		return `{"id":"m","content":[{"type":"text","text":"ok"}]}`
+	})
+	cfg := LLMConfig{
+		APIFormat: FormatAnthropic, BaseURL: srv.URL, APIKey: "sk-test",
+		Model: "m", ReasoningEffort: "xhigh", Headers: map[string]string{},
+	}
+	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	oc, ok := cap.body["output_config"].(map[string]any)
+	if !ok {
+		t.Fatalf("请求体里没有 output_config: %s", cap.raw)
+	}
+	if got := oc["effort"]; got != "xhigh" {
+		t.Errorf("output_config.effort = %v, 期望 xhigh", got)
+	}
+}
+
+// 没填推理等级时不该发 output_config 这个键（空对象可能被服务端当成非法值）
+func TestAnthropic_NoOutputConfigWhenEffortEmpty(t *testing.T) {
+	srv, cap := newCapture(t, func(c capturedRequest) string {
+		return `{"id":"m","content":[{"type":"text","text":"ok"}]}`
+	})
+	cfg := LLMConfig{
+		APIFormat: FormatAnthropic, BaseURL: srv.URL, APIKey: "sk-test",
+		Model: "m", Headers: map[string]string{},
+	}
+	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.Contains(cap.raw, "output_config") {
+		t.Errorf("未填推理等级时不该带 output_config: %s", cap.raw)
+	}
+}
+
 // ---- OpenAI Responses ----
 
 func TestResponses_NoToolCallReturnsText(t *testing.T) {

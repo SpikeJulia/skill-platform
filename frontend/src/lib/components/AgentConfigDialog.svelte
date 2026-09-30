@@ -40,11 +40,6 @@
 	// header 动态行：[{key, value}]
 	let headerRows = $state<{ key: string; value: string }[]>([]);
 
-	// reasoning_effort 只有 OpenAI Responses 适配器会读（走 reasoning.effort）。
-	// Anthropic 走的是 thinking.budget_tokens，另一套参数——所以选 Anthropic 时
-	// 这个框必须置灰，否则用户填了、存了、界面还显示着，请求里却根本没带。
-	const effortUnused = $derived(cfg?.api_format === 'anthropic');
-
 	onMount(async () => {
 		if (formats.length === 0) {
 			try {
@@ -284,12 +279,8 @@
 								id="cfg-effort"
 								data-config-field="reasoning_effort"
 								bind:value={cfg.reasoning_effort}
-								placeholder="low / medium / high"
-								disabled={effortUnused}
+								placeholder="low / medium / high / xhigh / max"
 							/>
-							{#if effortUnused}
-								<p class="text-xs text-muted-foreground">Anthropic 协议不读这个参数</p>
-							{/if}
 						</div>
 						<div class="space-y-1.5">
 							<label class="text-sm font-medium" for="cfg-ctx">上下文窗口</label>

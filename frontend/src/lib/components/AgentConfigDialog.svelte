@@ -159,9 +159,14 @@
 </script>
 
 <Dialog bind:open>
-	<!-- 注意：DialogContent 自带 sm:max-w-sm（384px），必须用同样的 sm: 变体去顶掉它，
-	     光写 max-w-3xl 会被它盖掉（之前就一直卡在 384px，API 格式下拉被挤到显示不全）。 -->
-	<DialogContent class="max-h-[88vh] overflow-y-auto sm:max-w-3xl" data-config-dialog>
+	<!-- 宽度写死 px，不跟着 html 的基准字号缩放。
+	     （1）DialogContent 自带 sm:max-w-sm（384px），必须用同样的 sm: 变体顶掉它，
+	         光写基础类 max-w-* 会被盖掉。
+	     （2）这里刻意不用 rem：全站放大 1.3 倍后，rem 版本的对话框跟着涨到 998px，
+	         太占屏幕。用 px 钉在 820px 左右——比 1.3 倍前的 768px 略宽一点，
+	         刚好容纳变大的字号，但不会被整体放大带着跑。
+	     对话框内部的文字/间距仍是 rem，会跟着一起放大。 -->
+	<DialogContent class="max-h-[88vh] overflow-y-auto sm:max-w-[820px]" data-config-dialog>
 		<DialogHeader>
 			<DialogTitle class="flex items-center gap-2">
 				<Plug class="h-5 w-5" /> Agent 配置

@@ -605,7 +605,7 @@
 							<div class="flex items-center gap-2">
 								<Package class="h-4 w-4 shrink-0 text-primary" />
 								<h3 class="truncate font-medium text-foreground">{skill.name}</h3>
-								<Badge variant="outline" class="gap-1 px-1.5 py-0 text-[10px] {lbl.class}">
+								<Badge variant="outline" class="gap-1 px-1.5 py-0 text-[0.625rem] {lbl.class}">
 									<svelte:component this={lbl.icon} class="h-3 w-3" />
 									{lbl.text}
 								</Badge>
@@ -685,7 +685,7 @@
 									<div class="min-w-0 flex-1">
 										<div class="flex items-center gap-2">
 											<span class="font-medium text-foreground">{u.name}</span>
-											<Badge variant="outline" class="px-1.5 py-0 text-[10px] text-amber-600">
+											<Badge variant="outline" class="px-1.5 py-0 text-[0.625rem] text-amber-600">
 												{u.agent}
 											</Badge>
 										</div>
@@ -694,7 +694,7 @@
 										{/if}
 										<div class="mt-2 flex items-center gap-2">
 											<code
-												class="flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground"
+												class="flex-1 truncate rounded bg-muted px-2 py-1 font-mono text-[0.6875rem] text-muted-foreground"
 												title={cmd}
 											>
 												{cmd}
@@ -725,7 +725,7 @@
 							{#each builtinUnmanaged as u (u.agent + '/' + u.name)}
 								<span
 									title={u.description || u.path}
-									class="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] text-muted-foreground"
+									class="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[0.6875rem] text-muted-foreground"
 								>
 									<PackageOpen class="h-3 w-3" />
 									{u.name}

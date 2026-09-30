@@ -236,7 +236,7 @@
 				<div class="flex items-center justify-between px-2 py-1.5 text-sm">
 					<div class="flex items-center gap-2">
 						<span class="font-medium text-foreground">{a.label}</span>
-						<Badge variant="secondary" class="text-[10px]">系统</Badge>
+						<Badge variant="secondary" class="text-[0.625rem]">系统</Badge>
 					</div>
 				</div>
 			{/each}

@@ -54,7 +54,7 @@ func TestAnthropic_NoToolCallReturnsText(t *testing.T) {
 		BaseURL: srv.URL, APIKey: "sk-test", Model: "test-model",
 		Headers: map[string]string{},
 	}
-	got, err := anthropicProvider{}.run(context.Background(), cfg, "sys", "user", 3)
+	got, err := anthropicProvider{}.run(context.Background(), cfg, "sys", "user", 3, tools)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestAnthropic_ToolCallRoundTrip(t *testing.T) {
 		APIFormat: FormatAnthropic, BaseURL: srv.URL, APIKey: "sk-test",
 		Model: "test-model", Headers: map[string]string{},
 	}
-	got, err := anthropicProvider{}.run(context.Background(), cfg, "sys", "user", 5)
+	got, err := anthropicProvider{}.run(context.Background(), cfg, "sys", "user", 5, tools)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestAnthropic_CustomHeadersOverrideAuth(t *testing.T) {
 		// MiniMax 的 Anthropic 端点两种认证都收；这里模拟用户选了 Bearer
 		Headers: map[string]string{"Authorization": "Bearer custom-token"},
 	}
-	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1); err != nil {
+	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1, tools); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if v := cap.headers.Get("Authorization"); v != "Bearer custom-token" {
@@ -155,7 +155,7 @@ func TestAnthropic_ReasoningEffortSentAsOutputConfig(t *testing.T) {
 		APIFormat: FormatAnthropic, BaseURL: srv.URL, APIKey: "sk-test",
 		Model: "m", ReasoningEffort: "xhigh", Headers: map[string]string{},
 	}
-	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1); err != nil {
+	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1, tools); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	oc, ok := cap.body["output_config"].(map[string]any)
@@ -176,7 +176,7 @@ func TestAnthropic_NoOutputConfigWhenEffortEmpty(t *testing.T) {
 		APIFormat: FormatAnthropic, BaseURL: srv.URL, APIKey: "sk-test",
 		Model: "m", Headers: map[string]string{},
 	}
-	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1); err != nil {
+	if _, err := (anthropicProvider{}).run(context.Background(), cfg, "s", "u", 1, tools); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	if strings.Contains(cap.raw, "output_config") {
@@ -197,7 +197,7 @@ func TestResponses_NoToolCallReturnsText(t *testing.T) {
 		APIFormat: FormatResponses, BaseURL: srv.URL,
 		APIKey: "sk-test", Model: "gpt-x", Headers: map[string]string{},
 	}
-	got, err := (responsesProvider{}).run(context.Background(), cfg, "sys", "user", 3)
+	got, err := (responsesProvider{}).run(context.Background(), cfg, "sys", "user", 3, tools)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestResponses_ToolCallRoundTrip(t *testing.T) {
 		APIFormat: FormatResponses, BaseURL: srv.URL, APIKey: "sk-test",
 		Model: "gpt-x", Headers: map[string]string{},
 	}
-	got, err := (responsesProvider{}).run(context.Background(), cfg, "sys", "user", 5)
+	got, err := (responsesProvider{}).run(context.Background(), cfg, "sys", "user", 5, tools)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestResponses_ReasoningEffortSent(t *testing.T) {
 		APIFormat: FormatResponses, BaseURL: srv.URL, APIKey: "k",
 		Model: "m", ReasoningEffort: "high", Headers: map[string]string{},
 	}
-	if _, err := (responsesProvider{}).run(context.Background(), cfg, "s", "u", 1); err != nil {
+	if _, err := (responsesProvider{}).run(context.Background(), cfg, "s", "u", 1, tools); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	r, ok := cap.body["reasoning"].(map[string]any)
@@ -286,7 +286,7 @@ func TestResponses_HTTPErrorIncludesBody(t *testing.T) {
 	}
 	// 假服务器返回 200，所以这里只会走 provider 的 error 分支；
 	// 真正要验的是「错误体带出来」而不是只有一句状态码。
-	_, err := (responsesProvider{}).run(context.Background(), cfg, "s", "u", 1)
+	_, err := (responsesProvider{}).run(context.Background(), cfg, "s", "u", 1, tools)
 	if err == nil {
 		t.Fatal("期望出错")
 	}

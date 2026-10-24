@@ -14,7 +14,7 @@ import (
 // 所以各自实现完整的 agent loop（结构一样，线格式不同）。
 type provider interface {
 	// run 跑一次完整的多轮工具调用循环，直到模型不再要工具或达到 maxTurns。
-	run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int) (string, error)
+	run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int, tdefs []ToolDefinition) (string, error)
 }
 
 // resolveProvider 按 api_format 返回对应适配器
@@ -87,6 +87,31 @@ var tools = []ToolDefinition{
 	},
 }
 
+// readOnlyTools 只给模型"看"的能力：读文件、列目录。
+//
+// 为什么组合/编排/合并/进化这几个操作不用完整工具集：
+//   - 它们的结果最终由 handler 自己写盘（LLM 只负责产出内容）
+//   - 把 write_file / bash 也给模型，就会出现**两个写入方**：
+//     模型用工具写一遍，handler 再用"从回复里抠出来的代码围栏"写一遍。
+//     两边内容不一致时以最后一次为准；更糟的是模型没返回围栏时，
+//     handler 会把"改动说明"当 SKILL.md 写进去，直接毁掉 skill。
+//   - 顺带省掉模型"写完再读回来确认"这种来回，每一轮都是一次真实 HTTP 调用，
+//     轮数预算本来就不富裕。
+var readOnlyTools = []ToolDefinition{
+	tools[1], // read_file
+	tools[3], // list_dir
+}
+
+// toolByName 按名字取工具定义
+func toolByName(name string) (ToolDefinition, bool) {
+	for _, t := range tools {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return ToolDefinition{}, false
+}
+
 // executeTool 执行一次工具调用并返回结果文本。
 // 三种协议的 tool call 结构不同，统一在这里解析成 {name, arguments(JSON字符串)} 后调用，
 // 工具本身和协议解耦。
@@ -140,9 +165,57 @@ func executeTool(name string, argumentsJSON string) string {
 	}
 }
 
+// agentTrail 记录 agent loop 里发生过的工具调用，两个用途：
+//  1. 检测模型重复调同一个工具（死循环，真实遇到过：进化功能卡在"超过最大轮数"）
+//  2. 轮数用尽时把轨迹带进报错，让用户一眼看出卡在哪一步
+type agentTrail struct {
+	seq  []string       // 人类可读的调用轨迹
+	seen map[string]int // name+args → 出现次数
+}
+
+func newAgentTrail() *agentTrail {
+	return &agentTrail{seen: map[string]int{}}
+}
+
+// record 记一次调用，返回这是第几次调用同样的东西
+func (t *agentTrail) record(name, args string) int {
+	key := name + "\x00" + args
+	t.seen[key]++
+	n := t.seen[key]
+	t.seq = append(t.seq, fmt.Sprintf("%s(%s)", name, truncate(args, 90)))
+	return n
+}
+
+// repeatHint 是喂回给模型的提示：别再重复同一个调用了
+func (t *agentTrail) repeatHint(name, args string, n int) string {
+	return fmt.Sprintf(
+		"你刚才已经用完全相同的参数调用过 %s %d 次了，结果都是一样的。\n"+
+			"别再重复这个调用。请基于已有的信息直接给出最终结果。",
+		name, n-1)
+}
+
+// summary 把轨迹压成一行，给报错信息用
+func (t *agentTrail) summary() string {
+	if len(t.seq) == 0 {
+		return "（模型没有调用任何工具）"
+	}
+	if len(t.seq) > 8 {
+		head := t.seq[:4]
+		tail := t.seq[len(t.seq)-4:]
+		parts := append([]string{}, head...)
+		parts = append(parts, "…")
+		parts = append(parts, tail...)
+		return strings.Join(parts, " → ")
+	}
+	return strings.Join(t.seq, " → ")
+}
+
 // AgentRun 跑一次完整的 agent loop（最多 maxTurns 轮）。
 // 现在按配置里的 api_format 分发到对应协议的适配器，并把全局提示词拼到操作提示词之前。
-func AgentRun(ctx context.Context, systemPrompt string, userPrompt string, maxTurns int) (string, error) {
+//
+// tdefs 是本次允许模型用的工具集。给不同操作传不同的集合是有意的：
+// 见 readOnlyTools 的注释。
+func AgentRun(ctx context.Context, systemPrompt string, userPrompt string, maxTurns int, tdefs []ToolDefinition) (string, error) {
 	app := pbApp()
 	if app == nil {
 		return "", fmt.Errorf("PocketBase app 未初始化")
@@ -164,7 +237,10 @@ func AgentRun(ctx context.Context, systemPrompt string, userPrompt string, maxTu
 	if maxTurns <= 0 {
 		maxTurns = 10
 	}
-	return prov.run(ctx, cfg, applyGlobalPrompt(cfg.GlobalPrompt, systemPrompt), userPrompt, maxTurns)
+	if tdefs == nil {
+		tdefs = tools
+	}
+	return prov.run(ctx, cfg, applyGlobalPrompt(cfg.GlobalPrompt, systemPrompt), userPrompt, maxTurns, tdefs)
 }
 
 // pbApp 返回全局 PocketBase app（main.go 里注入）

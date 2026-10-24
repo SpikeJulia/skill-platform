@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -73,9 +74,9 @@ type responsesResponse struct {
 	} `json:"error"`
 }
 
-func toolsToResponses() []responsesTool {
-	out := make([]responsesTool, 0, len(tools))
-	for _, t := range tools {
+func toolsToResponses(tdefs []ToolDefinition) []responsesTool {
+	out := make([]responsesTool, 0, len(tdefs))
+	for _, t := range tdefs {
 		out = append(out, responsesTool{
 			Type:        "function",
 			Name:        t.Name,
@@ -126,7 +127,7 @@ func (responsesProvider) post(ctx context.Context, cfg LLMConfig, body responses
 	return &out, nil
 }
 
-func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int) (string, error) {
+func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int, tdefs []ToolDefinition) (string, error) {
 	input := []responsesItem{{
 		Type: "message",
 		Role: "user",
@@ -138,12 +139,17 @@ func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt,
 	body := responsesRequest{
 		Model:           cfg.Model,
 		Instructions:    systemPrompt,
-		Tools:           toolsToResponses(),
+		Tools:           toolsToResponses(tdefs),
 		MaxOutputTokens: cfg.effectiveMaxTokens(),
 	}
 	if cfg.ReasoningEffort != "" {
 		body.Reasoning = &responsesReasoning{Effort: cfg.ReasoningEffort}
 	}
+
+	trail := newAgentTrail()
+	// lastText 记住模型最近一次说过的正文。轮数用尽时它就是"已经做出来的成果"，
+	// 直接丢掉等于白跑——之前就是这么把已经写好的内容变成一句报错。
+	lastText := ""
 
 	for turn := 0; turn < maxTurns; turn++ {
 		body.Input = input
@@ -179,10 +185,13 @@ func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt,
 				echo = append(echo, item)
 			}
 		}
+		if len(textParts) > 0 {
+			lastText = strings.Join(textParts, "\n")
+		}
 
 		// 没有工具调用 → 结束
 		if len(calls) == 0 {
-			return strings.Join(textParts, "\n"), nil
+			return lastText, nil
 		}
 
 		// 把模型这一轮的输出整体追加进 input
@@ -190,7 +199,14 @@ func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt,
 
 		// 工具结果
 		for _, call := range calls {
+			n := trail.record(call.Name, call.Arguments)
 			result := executeTool(call.Name, call.Arguments)
+			log.Printf("[agent] turn=%d 调用 %s (第 %d 次) → %s",
+				turn+1, call.Name, n, truncate(strings.ReplaceAll(result, "\n", " "), 120))
+			// 同一次调用重复出现：告诉模型别再重复了，给它一条出路
+			if n >= 2 {
+				result = trail.repeatHint(call.Name, call.Arguments, n) + "\n\n（上次的结果）\n" + result
+			}
 			input = append(input, responsesItem{
 				Type:    "function_call_output",
 				CallID:  call.CallID,
@@ -198,7 +214,17 @@ func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt,
 			})
 		}
 	}
-	return "", fmt.Errorf("超过最大轮数 (%d)", maxTurns)
+
+	// 轮数用尽。如果模型已经说过话，就把它说的返回去（附带提示），
+	// 而不是把整轮工作丢掉只报一句"超过最大轮数"。
+	if lastText != "" {
+		log.Printf("[agent] 轮数用尽（%d），但模型已产出 %d 字，返回已产出内容。轨迹: %s",
+			maxTurns, len(lastText), trail.summary())
+		return lastText, nil
+	}
+	log.Printf("[agent] 轮数用尽（%d）且无任何输出。轨迹: %s", maxTurns, trail.summary())
+	return "", fmt.Errorf("超过最大轮数 (%d)：模型一直在调工具没给出结果。工具调用轨迹: %s",
+		maxTurns, trail.summary())
 }
 
 func truncate(s string, n int) string {

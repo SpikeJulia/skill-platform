@@ -136,7 +136,8 @@ func installFromURL(c *core.RequestEvent) error {
 		userPrompt += fmt.Sprintf("\n用户指定的 skill 名: %s", req.Name)
 	}
 
-	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 15)
+	// 安装是唯一真的要写文件的操作，所以给完整工具集（含 write_file / bash）
+	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 15, tools)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}

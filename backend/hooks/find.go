@@ -71,7 +71,7 @@ func findSkills(c *core.RequestEvent) error {
 
 请返回 top %d 个最匹配的，按 JSON 格式输出。`, req.Query, candidates, req.TopK)
 
-	rawOutput, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 3)
+	rawOutput, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 3, readOnlyTools)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}

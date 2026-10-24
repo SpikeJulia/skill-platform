@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -36,9 +37,9 @@ func (anthropicProvider) client(cfg LLMConfig) anthropic.Client {
 }
 
 // toolsToAnthropic 把内部工具定义转成 Anthropic 的 ToolParam
-func toolsToAnthropic() []anthropic.ToolUnionParam {
-	out := make([]anthropic.ToolUnionParam, 0, len(tools))
-	for _, t := range tools {
+func toolsToAnthropic(tdefs []ToolDefinition) []anthropic.ToolUnionParam {
+	out := make([]anthropic.ToolUnionParam, 0, len(tdefs))
+	for _, t := range tdefs {
 		// ToolInputSchemaParam 只有 properties/required/type 三个具名字段，
 		// 我们内部定义的是完整 JSON Schema（可能带 additionalProperties 等），
 		// 所以整体塞进 ExtraFields 原样透传，不做字段级映射（映射会丢字段）。
@@ -73,14 +74,18 @@ func toStringSlice(v any) []string {
 	return out
 }
 
-func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int) (string, error) {
+func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int, tdefs []ToolDefinition) (string, error) {
 	client := anthropicProvider{}.client(cfg)
 
 	messages := []anthropic.MessageParam{{
 		Role:    anthropic.MessageParamRoleUser,
 		Content: []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(userPrompt)},
 	}}
-	tools := toolsToAnthropic()
+	tools := toolsToAnthropic(tdefs)
+	trail := newAgentTrail()
+	// lastText 记住模型最近一次说过的正文。轮数用尽时它就是"已经做出来的成果"，
+	// 直接丢掉等于白跑——之前就是这么把已经写好的内容变成一句报错。
+	lastText := ""
 
 	// Anthropic 强制要求 max_tokens，不给直接 400
 	maxTokens := int64(cfg.effectiveMaxTokens())
@@ -138,9 +143,13 @@ func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, u
 			}
 		}
 
+		if len(textParts) > 0 {
+			lastText = strings.Join(textParts, "\n")
+		}
+
 		// 没有工具调用 → 结束
 		if len(calls) == 0 {
-			return strings.Join(textParts, "\n"), nil
+			return lastText, nil
 		}
 
 		// assistant 的完整 content 列表要原样回填，否则多轮工具调用会断推理链
@@ -160,6 +169,13 @@ func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, u
 				raw = []byte("{}")
 			}
 			result := executeTool(call.name, string(raw))
+			n := trail.record(call.name, string(raw))
+			log.Printf("[agent] turn=%d 调用 %s (第 %d 次) → %s",
+				turn+1, call.name, n, truncate(strings.ReplaceAll(result, "\n", " "), 120))
+			// 同一次调用重复出现：告诉模型别再重复了，给它一条出路
+			if n >= 2 {
+				result = trail.repeatHint(call.name, string(raw), n) + "\n\n（上次的结果）\n" + result
+			}
 			resultBlocks = append(resultBlocks,
 				anthropic.NewToolResultBlock(call.id, result, strings.HasPrefix(result, "ERROR:")))
 		}
@@ -168,5 +184,14 @@ func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, u
 			Content: resultBlocks,
 		})
 	}
-	return "", fmt.Errorf("超过最大轮数 (%d)", maxTurns)
+	// 轮数用尽。如果模型已经说过话，就把它说的返回去（附带提示），
+	// 而不是把整轮工作丢掉只报一句"超过最大轮数"。
+	if lastText != "" {
+		log.Printf("[agent] 轮数用尽（%d），但模型已产出 %d 字，返回已产出内容。轨迹: %s",
+			maxTurns, len(lastText), trail.summary())
+		return lastText, nil
+	}
+	log.Printf("[agent] 轮数用尽（%d）且无任何输出。轨迹: %s", maxTurns, trail.summary())
+	return "", fmt.Errorf("超过最大轮数 (%d)：模型一直在调工具没给出结果。工具调用轨迹: %s",
+		maxTurns, trail.summary())
 }

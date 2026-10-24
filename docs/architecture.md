@@ -246,3 +246,25 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
     那是中央源。装到 agent 专属库的 skill 根本打不开详情页，agent 的
     组合/合并/进化也读不到它。改成走 `locateSkill`（中央源优先，与 ListSkills 一致）。
     这是做「移动」功能时发现的——不修的话 skill 一挪进专属库就打不开了。
+22. **agent loop 轮数用尽时，已经产出的内容不能丢** → 原来两个适配器都把
+    `textParts` 声明在 for 循环**内部**，轮数一用尽就直接
+    `return "", fmt.Errorf("超过最大轮数")`，模型在第 7 轮已经写好的正文
+    全被扔掉，用户只看到一句报错。改成把 `lastText` 提到循环外，
+    用尽时把它返回去（附一句提示），一个输出都没有才报错。
+23. **"由 handler 写盘"的操作不能同时给模型 write_file 工具** → 进化/合并这类操作，
+    结果是 handler 从模型回复里抠出代码围栏再写盘。模型要是也拿着 write_file，
+    就成了两个写入方：两边内容不一致时以最后一次为准；更糟的是模型没返回围栏时，
+    handler 会把"我做了哪些改动"的说明当 SKILL.md 写进去，**直接毁掉一个 skill**。
+    改法：给这些操作只传只读工具集（read_file / list_dir），
+    写盘统一由 handler 负责。顺带省掉模型"写完再读回确认"的来回，轮数省一半。
+    另外加一道护栏：没围栏且内容不像 SKILL.md（缺 YAML frontmatter）就拒绝写入，
+    返回 422 而不是写坏文件。
+24. **模型重复调同一个工具会耗尽轮数** → 加了重复检测：同一个 (name, args) 第二次出现时，
+    工具结果前面附一句"别再重复这个调用，直接给最终结果"，给它一条出路。
+    同时把工具调用轨迹记进服务端日志，轮数用尽的报错里也带上轨迹——
+    原来只有一句"超过最大轮数 (8)"，完全看不出卡在哪。
+25. **PocketBase 的 auxiliary.db（请求日志库）会损坏** → 症状是每条请求都打
+    `Failed to write log ... database disk image is malformed (11)`，日志被刷屏，
+    但业务数据（data.db）没事。`sqlite3 auxiliary.db "PRAGMA integrity_check;"`
+    一测就知道。日志库是可丢弃的，停容器后删掉 auxiliary.db* 让 PB 重建即可，
+    不会丢业务数据。

@@ -148,9 +148,10 @@ func putConfig(c *core.RequestEvent) error {
 	} else {
 		// 明确禁止调工具，且多给几轮余量——用户自定义的全局提示词可能把模型
 		// 带偏到去调工具，只给 1 轮会误报成"调用失败"。
+		// 探针不给任何工具（空集），它只需要回一句话。
 		if _, err := AgentRun(c.Request.Context(),
 			"你是连通性检查用的探针，只回一个字，不要调用任何工具。",
-			"回复 OK 两个字即可。不要调用任何工具。", 4); err != nil {
+			"回复 OK 两个字即可。不要调用任何工具。", 4, []ToolDefinition{}); err != nil {
 			testResult = "已保存，但连通性测试失败: " + err.Error()
 		} else {
 			testResult = "已保存，模型调用正常"

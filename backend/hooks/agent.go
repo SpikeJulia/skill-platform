@@ -10,17 +10,17 @@ import (
 
 // agentRequest 通用 LLM 操作请求
 type agentRequest struct {
-	Skills []string `json:"skills"`         // 选中的 skill 名
+	Skills []string `json:"skills"`           // 选中的 skill 名
 	Prompt string   `json:"prompt,omitempty"` // 用户补充要求
 	Target string   `json:"target,omitempty"` // 进化/合并时：新 skill 名
 }
 
 // agentResponse 通用响应
 type agentResponse struct {
-	Operation   string `json:"operation"`
-	Result      string `json:"result"`        // LLM 输出（Markdown）
-	Affected    []string `json:"affected"`    // 受影响的 skill 名
-	TargetPath  string `json:"target_path,omitempty"`
+	Operation  string   `json:"operation"`
+	Result     string   `json:"result"`   // LLM 输出（Markdown）
+	Affected   []string `json:"affected"` // 受影响的 skill 名
+	TargetPath string   `json:"target_path,omitempty"`
 }
 
 // 加载选中的 skill 的 SKILL.md 内容
@@ -61,7 +61,7 @@ func agentCompose(c *core.RequestEvent) error {
 	userPrompt := fmt.Sprintf("请组合以下 skill：\n\n%s\n\n%s",
 		content, optionalPrompt(req.Prompt))
 
-	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 5)
+	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 8, readOnlyTools)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -101,7 +101,7 @@ func agentOrchestrate(c *core.RequestEvent) error {
 	userPrompt := fmt.Sprintf("请编排以下 skill 为一个工作流：\n\n%s\n\n%s",
 		content, optionalPrompt(req.Prompt))
 
-	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 5)
+	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 8, readOnlyTools)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -143,7 +143,7 @@ func agentMerge(c *core.RequestEvent) error {
 	userPrompt := fmt.Sprintf("请合并以下 skill 为一个新 skill，名为: %s\n\n%s\n\n%s",
 		req.Target, content, optionalPrompt(req.Prompt))
 
-	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 8)
+	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 12, readOnlyTools)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -154,7 +154,13 @@ func agentMerge(c *core.RequestEvent) error {
 		merged = extractCodeBlock(result, "")
 	}
 	if merged == "" {
-		// LLM 没返回围栏，整个结果当 SKILL.md
+		// 没有围栏。**不能**无脑把整段回复当 SKILL.md 写进去——
+		// 模型可能只输出了"合并决策说明"，那会把新 skill 直接写坏。
+		if !looksLikeSkillMD(result) {
+			return c.JSON(422, map[string]string{
+				"error": "模型没有返回完整的 SKILL.md（找不到 YAML frontmatter 起始的代码块），已跳过写入，目标文件未创建。模型输出：" + truncate(result, 400),
+			})
+		}
 		merged = result
 	}
 
@@ -204,7 +210,7 @@ func agentEvolve(c *core.RequestEvent) error {
 	userPrompt := fmt.Sprintf("Skill: %s\n\n当前 SKILL.md:\n%s\n\n进化方向 / 改进要求:\n%s",
 		name, content, req.Prompt)
 
-	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 8)
+	result, err := AgentRun(c.Request.Context(), systemPrompt, userPrompt, 12, readOnlyTools)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -214,6 +220,14 @@ func agentEvolve(c *core.RequestEvent) error {
 		evolved = extractCodeBlock(result, "")
 	}
 	if evolved == "" {
+		// 没有代码围栏。**不能**无脑把整段回复当 SKILL.md 写进去——
+		// 模型可能只输出了"我做了哪些改动"的说明，那会把 skill 直接写坏。
+		// 只有当回复本身就是个完整的 SKILL.md（带 YAML frontmatter）才用它。
+		if !looksLikeSkillMD(result) {
+			return c.JSON(422, map[string]string{
+				"error": "模型没有返回完整的 SKILL.md（找不到 YAML frontmatter 起始的代码块），已跳过写入，原文件未改动。模型输出：" + truncate(result, 400),
+			})
+		}
 		evolved = result
 	}
 
@@ -229,6 +243,24 @@ func agentEvolve(c *core.RequestEvent) error {
 		Affected:   []string{name},
 		TargetPath: fmt.Sprintf("%s/%s/SKILL.md", skillsDir(), name),
 	})
+}
+
+// looksLikeSkillMD 判断一段文本是不是一份完整的 SKILL.md。
+//
+// 判据：开头是 YAML frontmatter（--- 起始），里面至少有 name: 和 description:。
+// 用来防止把模型的"改动说明"当成 skill 内容写进磁盘——那会直接毁掉一个 skill。
+func looksLikeSkillMD(s string) bool {
+	t := strings.TrimSpace(s)
+	if !strings.HasPrefix(t, "---") {
+		return false
+	}
+	rest := strings.TrimPrefix(t, "---")
+	idx := strings.Index(rest, "---")
+	if idx < 0 {
+		return false
+	}
+	front := rest[:idx]
+	return strings.Contains(front, "name:") && strings.Contains(front, "description:")
 }
 
 func optionalPrompt(p string) string {

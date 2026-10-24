@@ -60,7 +60,7 @@ func LLMConfigDefaults() LLMConfig {
 		Headers:         map[string]string{},
 		Model:           "MiniMax-M3",
 		ContextWindow:   1000000,
-		MaxOutputTokens: 8192,
+		MaxOutputTokens: defaultMaxOutputTokens,
 		ReasoningEffort: "",
 		GlobalPrompt:    defaultGlobalPrompt,
 	}
@@ -68,7 +68,16 @@ func LLMConfigDefaults() LLMConfig {
 
 // anthropicMaxTokensRequired Anthropic Messages API 强制要求 max_tokens，
 // 官方上限对多数模型是 64000，这里给一个不会撞上限的保守默认。
-const anthropicMaxTokensRequired = 8192
+const anthropicMaxTokensRequired = defaultMaxOutputTokens
+
+// defaultMaxOutputTokens 是"最大输出 Token"的出厂默认。
+//
+// 为什么不是 8192：实测 MiniMax 的**推理 token 和正文共用同一份
+// max_output_tokens 预算**——给 300 的一次请求里 reasoning_tokens=299、
+// 正文 0 字。而"进化 skill"要整篇重写 SKILL.md（一份 10KB 的文件
+// 正文本身就要三四千 token），额度不够就是正文被砍、文件残废。
+// 32768 是实测 MiniMax 能接受的值（status=completed）。
+const defaultMaxOutputTokens = 32768
 
 // effectiveMaxTokens 返回该传给供应商的上限。
 // Anthropic 不给会被拒，所以没配时兜一个默认值；OpenAI Responses 不传也行。
@@ -148,6 +157,12 @@ func loadLLMConfig(app core.App) (LLMConfig, error) {
 	cfg.Model = rec.GetString("model")
 	cfg.ContextWindow = rec.GetInt("context_window")
 	cfg.MaxOutputTokens = rec.GetInt("max_output_tokens")
+	// 0 = 没配过 = 用出厂默认。跟 global_prompt 一个道理：
+	// 界面显示的、实际发出去的、存的默认值三者必须一致，
+	// 不然"界面上是 0、实际没发这个参数"这种事没法排查。
+	if cfg.MaxOutputTokens <= 0 {
+		cfg.MaxOutputTokens = defaultMaxOutputTokens
+	}
 	cfg.ReasoningEffort = rec.GetString("reasoning_effort")
 	// 空 = 用户没改过 = 用出厂默认。这样界面显示的、实际发出去的、存的默认值三者一致。
 	cfg.GlobalPrompt = rec.GetString("global_prompt")

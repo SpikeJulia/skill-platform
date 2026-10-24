@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -16,6 +17,16 @@ type provider interface {
 	// run 跑一次完整的多轮工具调用循环，直到模型不再要工具或达到 maxTurns。
 	run(ctx context.Context, cfg LLMConfig, systemPrompt, userPrompt string, maxTurns int, tdefs []ToolDefinition) (string, error)
 }
+
+// llmRequestTimeout 是单次 HTTP 请求的上限。
+//
+// 为什么要显式给：① Anthropic SDK 在 max_tokens 较大时会拒绝非流式请求
+// （"streaming is required for operations that may take longer than 10 minutes"），
+// 唯一合法的绕法就是自己指定超时——SDK 见到显式超时就不再做那个检查；
+// ② 之前用 http.DefaultClient（无超时），服务端不响应时 goroutine 会永远挂着。
+//
+// 30 分钟是"够跑完一次整篇 SKILL.md 重写"的上限，又不至于把连接无限期占着。
+const llmRequestTimeout = 30 * time.Minute
 
 // resolveProvider 按 api_format 返回对应适配器
 func resolveProvider(format string) (provider, error) {

@@ -268,3 +268,41 @@ agent 名单还是动态的（在平台里增删），`docker-compose.yml` 的�
     但业务数据（data.db）没事。`sqlite3 auxiliary.db "PRAGMA integrity_check;"`
     一测就知道。日志库是可丢弃的，停容器后删掉 auxiliary.db* 让 PB 重建即可，
     不会丢业务数据。
+26. **SKILL.md 正文里几乎必然有代码围栏 → 通用围栏包一层必然被截断** →
+    进化 `tdd` 时写出来只有 32 行、结尾停在「## The Iron Law」，
+    因为原文第 33 行正好是一个 ``` 围栏。取法原来是"第一个 ``` 到下一个 ```"，
+    把**正文内部**的围栏当成了外层围栏的结束标记。
+    CommonMark 也救不了：围栏不能嵌套，外层用三个反引号时，
+    正文里的三个反引号就是合法的闭合标记。
+    所以**不能靠"解析得更聪明"，必须换协议**：让模型用专用分隔标记
+    `<<<SKILL_MD>>> … <<<END_SKILL_MD>>>` 输出全文（正文不套围栏），
+    代码围栏只作兜底——兜底也不做配对，而是"从带 frontmatter 的围栏起，
+    取到最后一个裸围栏行之前"，这样正文里的围栏原样保留。
+    通用判据：**要传递的内容本身可能含有分隔符时，不要用分隔符本身做包装**，
+    换用内容里不可能出现的标记。
+27. **模型输出被 max_output_tokens 截断时，推理 token 和正文共用同一份预算** →
+    实测给 MiniMax 一次 300 token 的请求，`usage.output_tokens=300`、
+    `output_tokens_details.reasoning_tokens=299`，**正文 0 字**，
+    但 `status` 报的是 `completed`/`incomplete`——只盯着正文长度会误判。
+    "进化 skill"要整篇重写 SKILL.md，一份 10KB 文件正文本身就要三四千 token，
+    8192 的默认额度偏紧。默认提到 32768（实测 MiniMax 接受，status=completed），
+    并且把截断原因和推理占用量直接报给用户，别只说"响应未完成"。
+    Anthropic 侧对应的是 `stop_reason=max_tokens`，也要显式处理。
+28. **写盘前的护栏要能识别"截断"，而不只是"缺 frontmatter"** →
+    早先的护栏只查"有没有 YAML frontmatter"，而截断后的半截文件**恰好有** frontmatter
+    （frontmatter 在文件最前面），护栏形同虚设。
+    现在加了两道：① 分隔标记/围栏没闭合 → 直接判为截断，拒绝写入；
+    ② frontmatter 里的 `name` 必须跟目标 skill 名对齐——
+    目录名是用户定的，name 字段必须跟它一致，否则注册时会出现
+    "目录叫 A、frontmatter 叫 B"的错位。
+29. **Anthropic SDK 会按 max_tokens 估耗时，超过 10 分钟就拒绝非流式请求** →
+    SDK 内部算 `expectedTime = 1h * max_tokens / 128000`，超过 10 分钟就返回
+    `streaming is required for operations that may take longer than 10 minutes`，
+    **请求根本没发出去**。门槛约 21333。
+    这意味着：用户把「最大输出 Token」调到几万、然后切到 Anthropic 协议，
+    **每一次调用都会立刻失败**——而且报错信息完全看不出是额度设大了。
+    官方 SDK 留了逃生口：显式指定请求超时后它就不做这个检查。
+    实测 MiniMax 的 Anthropic 兼容端点接受 `max_tokens=128000`（正常返回 end_turn），
+    所以限制纯粹在客户端侧。
+    通用判据：**第三方 SDK 内部的"启发式拒绝"要先确认端点本身能不能接受**——
+    直接打真端点，用非法参数/超大参数反证，比读 SDK 源码猜靠谱。

@@ -216,6 +216,14 @@
 					<div class="prose prose-stone max-w-none text-sm">
 						{@html renderMarkdown(agentResult.result)}
 					</div>
+					{#if agentResult.skill_md}
+						<details class="mt-3">
+							<summary class="cursor-pointer text-xs text-muted-foreground">
+								查看写入的 SKILL.md 全文
+							</summary>
+							<pre class="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted/50 p-3 text-xs">{agentResult.skill_md}</pre>
+						</details>
+					{/if}
 				</div>
 			{/if}
 		</Card>

@@ -26,6 +26,13 @@ func (anthropicProvider) client(cfg LLMConfig) anthropic.Client {
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(cfg.BaseURL),
 		option.WithHeaderAdd("anthropic-version", anthropicVersion),
+		// 必须显式给超时：SDK 内部按 max_tokens 估算耗时，
+		// 估出来超过 10 分钟就拒绝非流式请求（"streaming is required..."）。
+		// 而"进化 skill"整篇重写 SKILL.md 就是要几万个 token 的额度，
+		// 一旦用户在界面上把「最大输出 Token」调大，切到 Anthropic 协议
+		// 就会**每一次调用都立刻失败**。给了显式超时，SDK 就不做那个检查。
+		// 实测 MiniMax 的 Anthropic 兼容端点接受 max_tokens=128000。
+		option.WithRequestTimeout(llmRequestTimeout),
 	}
 	// 自定义 header 最后加，所以能覆盖默认的。
 	// 这不是可有可无的字段：MiniMax 的 Anthropic 端点同时接受
@@ -116,6 +123,14 @@ func (anthropicProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt, u
 		}, reqOpts...)
 		if err != nil {
 			return "", fmt.Errorf("Anthropic 调用失败: %w", err)
+		}
+		// stop_reason=max_tokens = 输出被上限截断了。
+		// 这时候正文是半截的，写进磁盘会毁掉 skill，必须在这里就停住。
+		if msg.StopReason == "max_tokens" {
+			log.Printf("[agent] Anthropic 返回 stop_reason=max_tokens（上限 %d）", maxTokens)
+			return "", fmt.Errorf(
+				"输出被截断：用完了 max_output_tokens=%d 的额度。这次没有写盘，原文件未改动。"+
+					"请把「最大输出 Token」调大后重试。", maxTokens)
 		}
 
 		var textParts []string

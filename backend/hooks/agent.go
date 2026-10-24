@@ -18,7 +18,8 @@ type agentRequest struct {
 // agentResponse 通用响应
 type agentResponse struct {
 	Operation  string   `json:"operation"`
-	Result     string   `json:"result"`   // LLM 输出（Markdown）
+	Result     string   `json:"result"`   // LLM 输出（Markdown，已去掉分隔标记）
+	SkillMD    string   `json:"skill_md"` // 实际写盘的 SKILL.md 内容（合并/进化才有）
 	Affected   []string `json:"affected"` // 受影响的 skill 名
 	TargetPath string   `json:"target_path,omitempty"`
 }
@@ -138,7 +139,7 @@ func agentMerge(c *core.RequestEvent) error {
 3. 写出一个合并后的 SKILL.md（保留 YAML frontmatter，name 用指定的新名，description 综合）
 4. 合并后的 skill 应该比单个 skill 更通用，但不要丢失核心能力
 
-输出格式：先简短解释合并决策（Markdown），然后用 markdown 代码围栏（三个反引号）写出合并后的完整 SKILL.md。`
+` + skillOutputFormat
 
 	userPrompt := fmt.Sprintf("请合并以下 skill 为一个新 skill，名为: %s\n\n%s\n\n%s",
 		req.Target, content, optionalPrompt(req.Prompt))
@@ -148,20 +149,12 @@ func agentMerge(c *core.RequestEvent) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	// 从 LLM 输出抠出合并后的 SKILL.md
-	merged := extractCodeBlock(result, "markdown")
-	if merged == "" {
-		merged = extractCodeBlock(result, "")
-	}
-	if merged == "" {
-		// 没有围栏。**不能**无脑把整段回复当 SKILL.md 写进去——
-		// 模型可能只输出了"合并决策说明"，那会把新 skill 直接写坏。
-		if !looksLikeSkillMD(result) {
-			return c.JSON(422, map[string]string{
-				"error": "模型没有返回完整的 SKILL.md（找不到 YAML frontmatter 起始的代码块），已跳过写入，目标文件未创建。模型输出：" + truncate(result, 400),
-			})
-		}
-		merged = result
+	// 从 LLM 输出抠出合并后的 SKILL.md。
+	// 取不到、或者取到的是被截断的残篇，一律拒绝写入——
+	// 写坏一个新 skill 比报错难收拾得多。
+	merged, err := prepareSkillMD(result, req.Target)
+	if err != nil {
+		return c.JSON(422, map[string]string{"error": err.Error()})
 	}
 
 	// 写新文件
@@ -174,7 +167,8 @@ func agentMerge(c *core.RequestEvent) error {
 
 	return c.JSON(200, agentResponse{
 		Operation:  "merge",
-		Result:     result,
+		Result:     stripSkillMarks(result),
+		SkillMD:    merged,
 		Affected:   req.Skills,
 		TargetPath: fmt.Sprintf("%s/%s/SKILL.md", skillsDir(), req.Target),
 	})
@@ -205,7 +199,7 @@ func agentEvolve(c *core.RequestEvent) error {
 3. 写出改进后的完整 SKILL.md（保持 YAML frontmatter 格式，name 保持不变）
 4. 简短说明你做了哪些改动
 
-输出格式：先简短列出改动点（Markdown），然后用 markdown 代码围栏（三个反引号）写出完整的 SKILL.md。`
+` + skillOutputFormat
 
 	userPrompt := fmt.Sprintf("Skill: %s\n\n当前 SKILL.md:\n%s\n\n进化方向 / 改进要求:\n%s",
 		name, content, req.Prompt)
@@ -215,20 +209,10 @@ func agentEvolve(c *core.RequestEvent) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	evolved := extractCodeBlock(result, "markdown")
-	if evolved == "" {
-		evolved = extractCodeBlock(result, "")
-	}
-	if evolved == "" {
-		// 没有代码围栏。**不能**无脑把整段回复当 SKILL.md 写进去——
-		// 模型可能只输出了"我做了哪些改动"的说明，那会把 skill 直接写坏。
-		// 只有当回复本身就是个完整的 SKILL.md（带 YAML frontmatter）才用它。
-		if !looksLikeSkillMD(result) {
-			return c.JSON(422, map[string]string{
-				"error": "模型没有返回完整的 SKILL.md（找不到 YAML frontmatter 起始的代码块），已跳过写入，原文件未改动。模型输出：" + truncate(result, 400),
-			})
-		}
-		evolved = result
+	// 同 merge：取不到完整的 SKILL.md 就拒绝写入，绝不拿半截内容覆盖原文件。
+	evolved, err := prepareSkillMD(result, name)
+	if err != nil {
+		return c.JSON(422, map[string]string{"error": err.Error()})
 	}
 
 	if err := WriteFile(name, "SKILL.md", evolved); err != nil {
@@ -239,7 +223,8 @@ func agentEvolve(c *core.RequestEvent) error {
 
 	return c.JSON(200, agentResponse{
 		Operation:  "evolve",
-		Result:     result,
+		Result:     stripSkillMarks(result),
+		SkillMD:    evolved,
 		Affected:   []string{name},
 		TargetPath: fmt.Sprintf("%s/%s/SKILL.md", skillsDir(), name),
 	})
@@ -250,16 +235,10 @@ func agentEvolve(c *core.RequestEvent) error {
 // 判据：开头是 YAML frontmatter（--- 起始），里面至少有 name: 和 description:。
 // 用来防止把模型的"改动说明"当成 skill 内容写进磁盘——那会直接毁掉一个 skill。
 func looksLikeSkillMD(s string) bool {
-	t := strings.TrimSpace(s)
-	if !strings.HasPrefix(t, "---") {
+	front, _, ok := splitFrontmatter(s)
+	if !ok {
 		return false
 	}
-	rest := strings.TrimPrefix(t, "---")
-	idx := strings.Index(rest, "---")
-	if idx < 0 {
-		return false
-	}
-	front := rest[:idx]
 	return strings.Contains(front, "name:") && strings.Contains(front, "description:")
 }
 
@@ -268,31 +247,4 @@ func optionalPrompt(p string) string {
 		return ""
 	}
 	return "用户补充要求: " + p + "\n"
-}
-
-// extractCodeBlock 从 markdown 文本抠 ```lang ... ``` 围栏
-func extractCodeBlock(s, lang string) string {
-	marker := "```" + lang
-	start := strings.Index(s, marker)
-	if start < 0 {
-		// 试试任意语言
-		if lang == "" {
-			start = strings.Index(s, "```")
-		}
-		if start < 0 {
-			return ""
-		}
-	}
-	// 跳过 ```xxx\n
-	rest := s[start:]
-	nl := strings.Index(rest, "\n")
-	if nl < 0 {
-		return ""
-	}
-	rest = rest[nl+1:]
-	end := strings.Index(rest, "```")
-	if end < 0 {
-		return ""
-	}
-	return rest[:end]
 }

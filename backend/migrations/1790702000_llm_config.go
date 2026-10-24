@@ -68,7 +68,7 @@ func init() {
 		rec.Set("headers", "{}")
 		rec.Set("model", "MiniMax-M3")
 		rec.Set("context_window", 1000000)
-		rec.Set("max_output_tokens", 8192)
+		rec.Set("max_output_tokens", 32768)
 		rec.Set("reasoning_effort", "")
 		rec.Set("global_prompt", "")
 		rec.Set("created_at", types.NowDateTime())

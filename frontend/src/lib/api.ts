@@ -38,6 +38,8 @@ export interface FindResponse {
 export interface AgentResponse {
 	operation: string;
 	result: string;
+	/** 实际写盘的 SKILL.md 全文（合并 / 进化才有） */
+	skill_md?: string;
 	affected: string[];
 	target_path?: string;
 }

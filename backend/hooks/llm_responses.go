@@ -21,6 +21,10 @@ import (
 //   工具结果输入项: {"type":"function_call_output","call_id":...,"output":...}
 type responsesProvider struct{}
 
+// llmHTTPClient 是 OpenAI Responses 用的 HTTP 客户端。
+// 显式给超时——http.DefaultClient 没有超时，服务端不响应时 goroutine 会永远挂着。
+var llmHTTPClient = &http.Client{Timeout: llmRequestTimeout}
+
 // responsesRequest 请求体。只用我们需要的字段。
 type responsesRequest struct {
 	Model           string             `json:"model"`
@@ -68,10 +72,30 @@ type responsesResponse struct {
 	ID     string          `json:"id"`
 	Status string          `json:"status"`
 	Output []responsesItem `json:"output"`
-	Error  *struct {
+	Usage  *responsesUsage `json:"usage"`
+	// IncompleteDetails 说明为什么没写完（max_output_tokens 等）。
+	// 没有这个字段时只能报一句"未完成"，用户不知道该调哪个旋钮。
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
+	Error *struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
 	} `json:"error"`
+}
+
+// responsesUsage 是这次调用的 token 用量。
+type responsesUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+	TotalTokens  int `json:"total_tokens"`
+	// OutputTokensDetails.ReasoningTokens 是"推理"占掉的额度。
+	// ⚠️ 实测 MiniMax 的推理 token 和正文**共用**同一份 max_output_tokens 预算：
+	// 给 300 的一次请求里 reasoning_tokens=299、正文 0 字。
+	// 所以额度不够时正文是"静默"消失的，必须把它单独报出来。
+	OutputTokensDetails *struct {
+		ReasoningTokens int `json:"reasoning_tokens"`
+	} `json:"output_tokens_details"`
 }
 
 func toolsToResponses(tdefs []ToolDefinition) []responsesTool {
@@ -105,7 +129,7 @@ func (responsesProvider) post(ctx context.Context, cfg LLMConfig, body responses
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := llmHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +185,23 @@ func (p responsesProvider) run(ctx context.Context, cfg LLMConfig, systemPrompt,
 			return "", fmt.Errorf("供应商返回错误: %s", resp.Error.Message)
 		}
 		if resp.Status == "incomplete" {
-			return "", fmt.Errorf("响应未完成（可能撞到 max_output_tokens=%d 上限）", body.MaxOutputTokens)
+			reason := "原因未给出"
+			if resp.IncompleteDetails != nil && resp.IncompleteDetails.Reason != "" {
+				reason = resp.IncompleteDetails.Reason
+			}
+			outTok, thinkTok := 0, 0
+			if resp.Usage != nil {
+				outTok = resp.Usage.OutputTokens
+				if resp.Usage.OutputTokensDetails != nil {
+					thinkTok = resp.Usage.OutputTokensDetails.ReasoningTokens
+				}
+			}
+			log.Printf("[agent] 响应 incomplete（reason=%s）output_tokens=%d 其中推理=%d 上限=%d",
+				reason, outTok, thinkTok, body.MaxOutputTokens)
+			return "", fmt.Errorf(
+				"输出被截断（%s）：用完了 max_output_tokens=%d 的额度，其中 %d 个被推理占掉，只剩 %d 个留给正文。"+
+					"这次没有写盘，原文件未改动。请把「最大输出 Token」调大后重试。",
+				reason, body.MaxOutputTokens, thinkTok, outTok-thinkTok)
 		}
 
 		// 收集本次输出里的文本和工具调用

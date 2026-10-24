@@ -366,3 +366,36 @@ func TestMaskSecretNeverLeaksFullKey(t *testing.T) {
 		t.Error("空 key 应返回空串")
 	}
 }
+
+// 大 max_tokens 不能让 Anthropic 路径直接罢工。
+//
+// Anthropic SDK 内部按 max_tokens 估算耗时，估出来超过 10 分钟就拒绝非流式请求：
+// "streaming is required for operations that may take longer than 10 minutes"。
+// 触发门槛大约是 21333（1h * maxTokens / 128000 > 10min）。
+// 而"进化 skill"整篇重写 SKILL.md 就是要几万个 token 的额度——
+// 用户在界面上把「最大输出 Token」调大，切到 Anthropic 协议就会**每次调用都立刻失败**。
+//
+// 修法是显式给 SDK 一个请求超时（SDK 见到显式超时就不再做那个检查）。
+// 实测 MiniMax 的 Anthropic 兼容端点接受 max_tokens=128000。
+func TestAnthropic_LargeMaxTokensDoesNotFail(t *testing.T) {
+	srv, cap := newCapture(t, func(c capturedRequest) string {
+		return `{"id":"msg_1","type":"message","role":"assistant","content":[
+			{"type":"text","text":"已收到"}] }`
+	})
+
+	cfg := LLMConfig{
+		Provider: "test", APIFormat: FormatAnthropic,
+		BaseURL: srv.URL, APIKey: "sk-test", Model: "test-model",
+		Headers: map[string]string{}, MaxOutputTokens: 128000,
+	}
+	got, err := anthropicProvider{}.run(context.Background(), cfg, "sys", "user", 3, tools)
+	if err != nil {
+		t.Fatalf("大 max_tokens 不该导致失败: %v", err)
+	}
+	if got != "已收到" {
+		t.Errorf("text = %q", got)
+	}
+	if v, _ := cap.body["max_tokens"].(float64); v != 128000 {
+		t.Errorf("max_tokens = %v，应原样传给供应商", v)
+	}
+}
